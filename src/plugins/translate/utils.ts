@@ -19,12 +19,19 @@
 import { classNameFactory } from "@utils/css";
 import { onlyOnce } from "@utils/onlyOnce";
 import { PluginNative } from "@utils/types";
+import { Message } from "@vencord/discord-types";
 import { showToast, Toasts } from "@webpack/common";
 
 import { DeeplLanguages, deeplLanguageToGoogleLanguage, GoogleLanguages, KagiLanguages } from "./languages";
 import { resetLanguageDefaults, settings } from "./settings";
 
 export const cl = classNameFactory("vc-trans-");
+
+export function getMessageContent(message: Message) {
+    return message.content
+        || message.messageSnapshots?.[0]?.message.content
+        || message.embeds?.find(embed => embed.type === "auto_moderation_message")?.rawDescription || "";
+}
 
 const Native = VencordNative.pluginHelpers.Translate as PluginNative<typeof import("./native")>;
 

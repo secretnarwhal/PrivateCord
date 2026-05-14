@@ -1,0 +1,113 @@
+.vc-baseconv-modal-content {
+    padding: 1em;
+}
+
+.vc-baseconv-modal-header {
+    place-content: center space-between;
+}
+
+.vc-baseconv-modal-title {
+    margin: 0;
+}
+
+.vc-baseconv-accessory {
+    color: inherit;
+    font-style: normal;
+    font-weight: inherit;
+    line-height: 1.375;
+    white-space: break-spaces;
+}
+
+.vc-baseconv-accessory-icon {
+    margin-right: 0.25em;
+    vertical-align: text-bottom;
+    opacity: 0.5;
+}
+
+.vc-baseconv-decoded-text {
+    color: inherit;
+}
+
+.vc-baseconv-meta {
+    display: inline;
+    color: var(--text-muted);
+    font-size: 0.8125rem;
+    font-style: italic;
+}
+
+.vc-baseconv-encoding-label {
+    color: var(--interactive-active);
+    font-weight: 600;
+    font-style: normal;
+}
+
+.vc-baseconv-toggle-original {
+    all: unset;
+    cursor: pointer;
+    color: var(--text-link);
+}
+
+.vc-baseconv-toggle-original:is(:hover, :focus) {
+    text-decoration: underline;
+}
+
+.vc-baseconv-dismiss {
+    all: unset;
+    cursor: pointer;
+    color: var(--text-link);
+}
+
+.vc-baseconv-dismiss:is(:hover, :focus) {
+    text-decoration: underline;
+}
+
+.vc-baseconv-auto-encode {
+    color: var(--green-360);
+}
+
+.vc-baseconv-chat-button {
+    scale: 1.085;
+}
+
+/* AES secret row */
+.vc-baseconv-secret-row {
+    display: flex;
+    gap: 0.5em;
+    align-items: center;
+}
+
+.vc-baseconv-secret-input {
+    flex: 1;
+    padding: 0.5em 0.75em;
+    background: var(--input-background);
+    border: 1px solid var(--input-background);
+    border-radius: 3px;
+    color: var(--text-normal);
+    font-size: 1rem;
+    outline: none;
+    box-sizing: border-box;
+    font-family: var(--font-code);
+}
+
+.vc-baseconv-secret-input:focus {
+    border-color: var(--brand-experiment);
+}
+
+.vc-baseconv-secret-input::placeholder {
+    color: var(--text-muted);
+}
+
+.vc-baseconv-secret-toggle {
+    all: unset;
+    cursor: pointer;
+    padding: 0.5em 0.75em;
+    background: var(--button-secondary-background);
+    border-radius: 3px;
+    color: var(--text-normal);
+    font-size: 0.875rem;
+    white-space: nowrap;
+}
+
+.vc-baseconv-secret-toggle:hover {
+    background: var(--button-secondary-background-hover);
+}

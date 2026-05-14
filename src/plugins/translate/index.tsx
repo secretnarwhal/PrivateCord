@@ -27,7 +27,7 @@ import { ChannelStore, Menu } from "@webpack/common";
 import { settings } from "./settings";
 import { setShouldShowTranslateEnabledTooltip, TranslateChatBarIcon, TranslateIcon } from "./TranslateIcon";
 import { handleTranslate, TranslationAccessory } from "./TranslationAccessory";
-import { translate } from "./utils";
+import { getMessageContent, translate } from "./utils";
 
 const messageCtxPatch: NavContextMenuPatchCallback = (children, { message }: { message: Message; }) => {
     const content = getMessageContent(message);
@@ -49,15 +49,6 @@ const messageCtxPatch: NavContextMenuPatchCallback = (children, { message }: { m
     ));
 };
 
-
-function getMessageContent(message: Message) {
-    // Message snapshots is an array, which allows for nested snapshots, which Discord does not do yet.
-    // no point collecting content or rewriting this to render in a certain way that makes sense
-    // for something currently impossible.
-    return message.content
-        || message.messageSnapshots?.[0]?.message.content
-        || message.embeds?.find(embed => embed.type === "auto_moderation_message")?.rawDescription || "";
-}
 
 let tooltipTimeout: any;
 

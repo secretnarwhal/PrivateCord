@@ -19,8 +19,9 @@
 import { Message } from "@vencord/discord-types";
 import { Parser, useEffect, useState } from "@webpack/common";
 
+import { settings } from "./settings";
 import { TranslateIcon } from "./TranslateIcon";
-import { cl, TranslationValue } from "./utils";
+import { cl, getLanguages, getMessageContent, translate, TranslationValue } from "./utils";
 
 const TranslationSetters = new Map<string, (v: TranslationValue) => void>();
 
@@ -47,6 +48,18 @@ export function TranslationAccessory({ message }: { message: Message; }) {
         if ((message as any).vencordEmbeddedBy) return;
 
         TranslationSetters.set(message.id, setTranslation);
+
+        if (settings.store.autoTranslateReceived) {
+            const content = getMessageContent(message);
+            if (content) {
+                translate("received", content).then(result => {
+                    const targetLangName = getLanguages()[settings.store.receivedOutput];
+                    if (result.sourceLanguage !== targetLangName) {
+                        setTranslation(result);
+                    }
+                }).catch(() => {});
+            }
+        }
 
         return () => void TranslationSetters.delete(message.id);
     }, []);

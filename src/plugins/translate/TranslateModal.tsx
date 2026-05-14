@@ -73,6 +73,20 @@ function AutoTranslateToggle() {
     );
 }
 
+function AutoTranslateReceivedToggle() {
+    const value = settings.use(["autoTranslateReceived"]).autoTranslateReceived;
+
+    return (
+        <FormSwitch
+            title="Auto Translate Received"
+            description={settings.def.autoTranslateReceived.description}
+            value={value}
+            onChange={v => settings.store.autoTranslateReceived = v}
+            hideBorder
+        />
+    );
+}
+
 
 function TranslateModal({ rootProps }: { rootProps: ModalProps; }) {
     return (
@@ -96,6 +110,7 @@ function TranslateModal({ rootProps }: { rootProps: ModalProps; }) {
                 <Divider className={Margins.bottom16} />
 
                 <AutoTranslateToggle />
+                <AutoTranslateReceivedToggle />
             </ModalContent>
         </ModalRoot>
     );
