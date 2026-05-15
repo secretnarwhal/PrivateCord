@@ -17,7 +17,7 @@
 */
 
 import { Message } from "@vencord/discord-types";
-import { Parser, useEffect, useRef, useState } from "@webpack/common";
+import { ChannelStore, Parser, useEffect, useRef, useState, UserStore } from "@webpack/common";
 
 import { BaseConverterIcon } from "./BaseConverterIcon";
 import { settings } from "./settings";
@@ -44,7 +44,19 @@ function findMessageContentEl(messageId: string): HTMLElement | null {
 export function BaseConverterAccessory({ message }: { message: Message; }) {
     const { autoDecodeReceived, receiveEncoding, aesSecret, userKeys } = settings.use(["autoDecodeReceived", "receiveEncoding", "aesSecret", "userKeys"]);
     const authorId: string | undefined = (message as any).author?.id;
-    const effectiveKey = (authorId && userKeys?.[authorId]) ? userKeys[authorId] : aesSecret;
+    const currentUserId = UserStore.getCurrentUser()?.id;
+
+    // For your own messages in a DM the author is YOU, so userKeys[authorId] is
+    // meaningless. Use the DM partner's key instead, since that's who you encoded for.
+    let effectiveKey: string;
+    if (authorId && authorId === currentUserId) {
+        const channel = ChannelStore.getChannel(message.channel_id);
+        const partnerRaw = (channel as any)?.recipients?.[0];
+        const partnerId: string | undefined = typeof partnerRaw === "string" ? partnerRaw : partnerRaw?.id;
+        effectiveKey = (partnerId && userKeys?.[partnerId]) ? userKeys[partnerId] : aesSecret;
+    } else {
+        effectiveKey = (authorId && userKeys?.[authorId]) ? userKeys[authorId] : aesSecret;
+    }
     const [result, setResult] = useState<ConversionResult | undefined>();
     const [showOriginal, setShowOriginal] = useState(false);
     const containerRef = useRef<HTMLSpanElement>(null);
