@@ -70,7 +70,8 @@ const messageCtxPatch: NavContextMenuPatchCallback = (children, { message }: { m
 
 const userContextPatch: NavContextMenuPatchCallback = (children, { user }: { user?: User; }) => {
     if (!user) return;
-    children.push(
+
+    const item = (
         <Menu.MenuItem
             id="vc-baseconv-set-user-key"
             label="Set AES Secret Key"
@@ -78,6 +79,18 @@ const userContextPatch: NavContextMenuPatchCallback = (children, { user }: { use
             action={() => openUserKeyModal(user.id, user.username)}
         />
     );
+
+    // In DM sidebar: insert before "Close DM" so the item is in the visible section.
+    // In server / other contexts: find the devmode group or fall back to appending.
+    const dmGroup = findGroupChildrenByChildId("close-dm", children);
+    if (dmGroup) {
+        const idx = dmGroup.findIndex(c => c?.props?.id === "close-dm");
+        dmGroup.splice(idx, 0, item);
+        return;
+    }
+
+    const devGroup = findGroupChildrenByChildId(`devmode-copy-id-${user.id}`, children);
+    (devGroup ?? children).splice(-1, 0, item);
 };
 
 let tooltipTimeout: ReturnType<typeof setTimeout>;
