@@ -21,9 +21,10 @@ import { Divider } from "@components/Divider";
 import { FormSwitch } from "@components/FormSwitch";
 import { Margins } from "@utils/margins";
 import { ModalCloseButton, ModalContent, ModalHeader, ModalProps, ModalRoot, openModal } from "@utils/modal";
-import { Forms, SearchableSelect, useState } from "@webpack/common";
+import { Forms, SearchableSelect, UserStore, useState } from "@webpack/common";
 
 import { settings } from "./settings";
+import { openUserKeyModal } from "./UserKeyModal";
 import { cl, DECODE_OPTIONS, ENCODE_OPTIONS } from "./utils";
 
 function EncodingSelect({
@@ -113,6 +114,50 @@ function AutoEncodeToggle() {
     );
 }
 
+function UserKeysSection() {
+    const userKeys = settings.use(["userKeys"]).userKeys ?? {};
+    const entries = Object.entries(userKeys);
+
+    if (entries.length === 0) return null;
+
+    return (
+        <>
+            <Divider className={Margins.bottom16} />
+            <section className={Margins.bottom16}>
+                <Forms.FormTitle tag="h3">Per-User AES Keys</Forms.FormTitle>
+                <Forms.FormText className={Margins.bottom8}>
+                    These keys override the global secret for specific users. Right-click a user to add or update a key.
+                </Forms.FormText>
+                {entries.map(([userId]) => {
+                    const username = UserStore.getUser(userId)?.username ?? userId;
+                    return (
+                        <div key={userId} className={cl("user-key-row")}>
+                            <span className={cl("user-key-name")}>@{username}</span>
+                            <button
+                                className={cl("user-key-btn", "user-key-edit")}
+                                onClick={() => openUserKeyModal(userId, username)}
+                                type="button"
+                            >
+                                Edit
+                            </button>
+                            <button
+                                className={cl("user-key-btn", "user-key-clear")}
+                                onClick={() => {
+                                    const { [userId]: _, ...rest } = settings.store.userKeys ?? {};
+                                    settings.store.userKeys = rest;
+                                }}
+                                type="button"
+                            >
+                                Remove
+                            </button>
+                        </div>
+                    );
+                })}
+            </section>
+        </>
+    );
+}
+
 function BaseConverterModal({ rootProps }: { rootProps: ModalProps; }) {
     return (
         <ModalRoot {...rootProps}>
@@ -144,6 +189,8 @@ function BaseConverterModal({ rootProps }: { rootProps: ModalProps; }) {
 
                 <AutoDecodeToggle />
                 <AutoEncodeToggle />
+
+                <UserKeysSection />
             </ModalContent>
         </ModalRoot>
     );

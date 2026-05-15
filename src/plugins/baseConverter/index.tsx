@@ -20,12 +20,13 @@ import "./styles.css";
 
 import { findGroupChildrenByChildId, NavContextMenuPatchCallback } from "@api/ContextMenu";
 import definePlugin from "@utils/types";
-import { Message } from "@vencord/discord-types";
+import { Message, User } from "@vencord/discord-types";
 import { ChannelStore, Menu, showToast, Toasts } from "@webpack/common";
 
 import { handleDecode, BaseConverterAccessory } from "./BaseConverterAccessory";
 import { BaseConverterChatBarIcon, BaseConverterIcon, setShouldShowAutoEncodeTooltip } from "./BaseConverterIcon";
 import { settings } from "./settings";
+import { openUserKeyModal } from "./UserKeyModal";
 import { decode, encode, EncodingType, EncodeTarget } from "./utils";
 
 function getMessageContent(message: Message): string {
@@ -48,10 +49,14 @@ const messageCtxPatch: NavContextMenuPatchCallback = (children, { message }: { m
             label="Decode Message"
             icon={BaseConverterIcon}
             action={async () => {
+                const authorId: string | undefined = (message as any).author?.id;
+                const aesKey = (authorId && settings.store.userKeys?.[authorId])
+                    ? settings.store.userKeys[authorId]
+                    : settings.store.aesSecret;
                 const result = await decode(
                     content,
                     settings.store.receiveEncoding as EncodingType,
-                    settings.store.aesSecret
+                    aesKey
                 );
                 if (result) {
                     handleDecode(message.id, result);
@@ -61,6 +66,18 @@ const messageCtxPatch: NavContextMenuPatchCallback = (children, { message }: { m
             }}
         />
     ));
+};
+
+const userContextPatch: NavContextMenuPatchCallback = (children, { user }: { user?: User; }) => {
+    if (!user) return;
+    children.push(
+        <Menu.MenuItem
+            id="vc-baseconv-set-user-key"
+            label="Set AES Secret Key"
+            icon={BaseConverterIcon}
+            action={() => openUserKeyModal(user.id, user.username)}
+        />
+    );
 };
 
 let tooltipTimeout: ReturnType<typeof setTimeout>;
@@ -75,6 +92,7 @@ export default definePlugin({
 
     contextMenus: {
         "message": messageCtxPatch,
+        "user-context": userContextPatch,
     },
 
     renderMessageAccessory: props => <BaseConverterAccessory message={props.message} />,
@@ -96,10 +114,14 @@ export default definePlugin({
                 message,
                 channel: ChannelStore.getChannel(message.channel_id),
                 onClick: async () => {
+                    const authorId: string | undefined = (message as any).author?.id;
+                    const aesKey = (authorId && settings.store.userKeys?.[authorId])
+                        ? settings.store.userKeys[authorId]
+                        : settings.store.aesSecret;
                     const result = await decode(
                         content,
                         settings.store.receiveEncoding as EncodingType,
-                        settings.store.aesSecret
+                        aesKey
                     );
                     if (result) {
                         handleDecode(message.id, result);
@@ -111,11 +133,22 @@ export default definePlugin({
         },
     },
 
-    async onBeforeMessageSend(_, message) {
+    async onBeforeMessageSend(channelId, message) {
         if (!settings.store.autoEncodeOutgoing) return;
         if (!message.content) return;
 
-        if (settings.store.sendEncoding === "aes" && !settings.store.aesSecret) {
+        // For DMs, prefer the per-user key for the recipient over the global secret.
+        let aesKey = settings.store.aesSecret;
+        const channel = ChannelStore.getChannel(channelId);
+        if (channel?.type === 1) {
+            const recipientId = (channel as any).recipients?.[0];
+            if (typeof recipientId === "string") {
+                const userKey = settings.store.userKeys?.[recipientId];
+                if (userKey) aesKey = userKey;
+            }
+        }
+
+        if (settings.store.sendEncoding === "aes" && !aesKey) {
             showToast("Set a shared AES secret in the Base Converter settings before sending.", Toasts.Type.FAILURE);
             return;
         }
@@ -127,7 +160,7 @@ export default definePlugin({
         message.content = await encode(
             message.content,
             settings.store.sendEncoding as EncodeTarget,
-            settings.store.aesSecret
+            aesKey
         );
     },
 });

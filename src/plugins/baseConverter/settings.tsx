@@ -62,4 +62,6 @@ export const settings = definePluginSettings({
             </Button>
         ),
     },
-});
+}).withPrivateSettings<{
+    userKeys: Record<string, string>;
+}>();

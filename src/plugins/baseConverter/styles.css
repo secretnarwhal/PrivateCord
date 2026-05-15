@@ -111,3 +111,76 @@
 .vc-baseconv-secret-toggle:hover {
     background: var(--button-secondary-background-hover);
 }
+
+/* Per-user key modal actions */
+.vc-baseconv-user-key-actions {
+    display: flex;
+    gap: 0.5em;
+    flex-wrap: wrap;
+}
+
+.vc-baseconv-user-key-btn {
+    all: unset;
+    cursor: pointer;
+    padding: 0.45em 1em;
+    border-radius: 3px;
+    font-size: 0.875rem;
+    font-weight: 500;
+    white-space: nowrap;
+}
+
+.vc-baseconv-user-key-save {
+    background: var(--button-positive-background);
+    color: #fff;
+}
+
+.vc-baseconv-user-key-save:hover {
+    background: var(--button-positive-background-hover, var(--button-positive-background));
+}
+
+.vc-baseconv-user-key-save:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.vc-baseconv-user-key-clear {
+    background: var(--button-danger-background);
+    color: #fff;
+}
+
+.vc-baseconv-user-key-clear:hover {
+    background: var(--button-danger-background-hover, var(--button-danger-background));
+}
+
+.vc-baseconv-user-key-cancel {
+    background: var(--button-secondary-background);
+    color: var(--text-normal);
+}
+
+.vc-baseconv-user-key-cancel:hover {
+    background: var(--button-secondary-background-hover);
+}
+
+.vc-baseconv-user-key-edit {
+    background: var(--button-secondary-background);
+    color: var(--text-normal);
+}
+
+.vc-baseconv-user-key-edit:hover {
+    background: var(--button-secondary-background-hover);
+}
+
+/* Per-user key list rows in the main modal */
+.vc-baseconv-user-key-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5em;
+    margin-bottom: 0.5em;
+}
+
+.vc-baseconv-user-key-name {
+    flex: 1;
+    font-family: var(--font-code);
+    font-size: 0.875rem;
+    color: var(--text-normal);
+}

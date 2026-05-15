@@ -42,7 +42,9 @@ function findMessageContentEl(messageId: string): HTMLElement | null {
 }
 
 export function BaseConverterAccessory({ message }: { message: Message; }) {
-    const { autoDecodeReceived, receiveEncoding, aesSecret } = settings.use(["autoDecodeReceived", "receiveEncoding", "aesSecret"]);
+    const { autoDecodeReceived, receiveEncoding, aesSecret, userKeys } = settings.use(["autoDecodeReceived", "receiveEncoding", "aesSecret", "userKeys"]);
+    const authorId: string | undefined = (message as any).author?.id;
+    const effectiveKey = (authorId && userKeys?.[authorId]) ? userKeys[authorId] : aesSecret;
     const [result, setResult] = useState<ConversionResult | undefined>();
     const [showOriginal, setShowOriginal] = useState(false);
     const containerRef = useRef<HTMLSpanElement>(null);
@@ -71,7 +73,7 @@ export function BaseConverterAccessory({ message }: { message: Message; }) {
         ConversionSetters.set(message.id, setResult);
 
         if (autoDecodeReceived && message.content) {
-            decode(message.content, receiveEncoding as EncodingType, aesSecret)
+            decode(message.content, receiveEncoding as EncodingType, effectiveKey)
                 .then(decoded => {
                     if (decoded) {
                         setResult(decoded);
@@ -82,7 +84,7 @@ export function BaseConverterAccessory({ message }: { message: Message; }) {
         }
 
         return () => void ConversionSetters.delete(message.id);
-    }, [message.id, autoDecodeReceived, receiveEncoding, aesSecret]);
+    }, [message.id, autoDecodeReceived, receiveEncoding, effectiveKey]);
 
     // Hide the original encrypted message content when decoded; show when toggled
     useEffect(() => {
