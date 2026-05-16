@@ -49,12 +49,15 @@ export function BaseConverterAccessory({ message }: { message: Message; }) {
     // For your own messages in a DM the author is YOU, so userKeys[authorId] is
     // meaningless. Use the DM partner's key instead, since that's who you encoded for.
     let effectiveKey: string;
+    let hasUserKey: boolean;
     if (authorId && authorId === currentUserId) {
         const channel = ChannelStore.getChannel(message.channel_id);
         const partnerRaw = (channel as any)?.recipients?.[0];
         const partnerId: string | undefined = typeof partnerRaw === "string" ? partnerRaw : partnerRaw?.id;
+        hasUserKey = !!(partnerId && userKeys?.[partnerId]);
         effectiveKey = (partnerId && userKeys?.[partnerId]) ? userKeys[partnerId] : aesSecret;
     } else {
+        hasUserKey = !!(authorId && userKeys?.[authorId]);
         effectiveKey = (authorId && userKeys?.[authorId]) ? userKeys[authorId] : aesSecret;
     }
     const [result, setResult] = useState<ConversionResult | undefined>();
@@ -84,8 +87,10 @@ export function BaseConverterAccessory({ message }: { message: Message; }) {
 
         ConversionSetters.set(message.id, setResult);
 
-        if (autoDecodeReceived && message.content) {
-            decode(message.content, receiveEncoding as EncodingType, effectiveKey)
+        // A per-user key forces AES auto-decode regardless of the autoDecodeReceived toggle.
+        if ((autoDecodeReceived || hasUserKey) && message.content) {
+            const encoding: EncodingType = hasUserKey ? "aes" : receiveEncoding as EncodingType;
+            decode(message.content, encoding, effectiveKey)
                 .then(decoded => {
                     if (decoded) {
                         setResult(decoded);
@@ -96,7 +101,7 @@ export function BaseConverterAccessory({ message }: { message: Message; }) {
         }
 
         return () => void ConversionSetters.delete(message.id);
-    }, [message.id, autoDecodeReceived, receiveEncoding, effectiveKey]);
+    }, [message.id, autoDecodeReceived, hasUserKey, receiveEncoding, effectiveKey]);
 
     // Hide the original encrypted message content when decoded; show when toggled
     useEffect(() => {

@@ -125,19 +125,19 @@ async function getAesKey(secret: string): Promise<CryptoKey> {
 function decodeBinary(text: string): string {
     const parts = text.trim().split(/\s+/);
     if (!parts.every(p => /^[01]{1,8}$/.test(p))) throw new Error("Invalid binary");
-    return parts.map(b => String.fromCharCode(parseInt(b, 2))).join("");
+    return new TextDecoder().decode(new Uint8Array(parts.map(b => parseInt(b, 2))));
 }
 
 function decodeOctal(text: string): string {
     const parts = text.trim().split(/\s+/);
     if (!parts.every(p => /^[0-7]+$/.test(p))) throw new Error("Invalid octal");
-    return parts.map(o => String.fromCharCode(parseInt(o, 8))).join("");
+    return new TextDecoder().decode(new Uint8Array(parts.map(o => parseInt(o, 8))));
 }
 
 function decodeDecimal(text: string): string {
     const parts = text.trim().split(/\s+/);
     if (!parts.every(p => /^\d+$/.test(p))) throw new Error("Invalid decimal");
-    return parts.map(d => String.fromCharCode(Number(d))).join("");
+    return new TextDecoder().decode(new Uint8Array(parts.map(Number)));
 }
 
 function decodeHex(text: string): string {
@@ -147,7 +147,7 @@ function decodeHex(text: string): string {
         : stripped;
     if (!/^[0-9a-fA-F]+$/.test(cleaned) || cleaned.length % 2 !== 0)
         throw new Error("Invalid hex");
-    return cleaned.match(/.{2}/g)!.map(h => String.fromCharCode(parseInt(h, 16))).join("");
+    return new TextDecoder().decode(new Uint8Array(cleaned.match(/.{2}/g)!.map(h => parseInt(h, 16))));
 }
 
 function decodeBase32(text: string): string {

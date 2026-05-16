@@ -147,23 +147,31 @@ export default definePlugin({
     },
 
     async onBeforeMessageSend(channelId, message) {
-        if (!settings.store.autoEncodeOutgoing) return;
         if (!message.content) return;
 
         // For 1-on-1 DMs, prefer the per-user key for the recipient.
         // Guard: only apply when there is exactly one recipient (DM, not group DM or server).
         // Recipients may be stored as strings (user IDs) or user objects — handle both.
-        let aesKey = settings.store.aesSecret;
         const channel = ChannelStore.getChannel(channelId);
         const recipients: unknown[] = (channel as any)?.recipients ?? [];
+        let aesKey = settings.store.aesSecret;
+        let hasUserKey = false;
         if (recipients.length === 1) {
             const raw = recipients[0];
             const recipientId: string | undefined = typeof raw === "string" ? raw : (raw as any)?.id;
             const userKey = recipientId ? settings.store.userKeys?.[recipientId] : undefined;
-            if (userKey) aesKey = userKey;
+            if (userKey) {
+                aesKey = userKey;
+                hasUserKey = true;
+            }
         }
 
-        if (settings.store.sendEncoding === "aes" && !aesKey) {
+        // A per-user key bypasses the autoEncodeOutgoing toggle and always AES-encodes.
+        if (!hasUserKey && !settings.store.autoEncodeOutgoing) return;
+
+        const sendEncoding: EncodeTarget = hasUserKey ? "aes" : settings.store.sendEncoding as EncodeTarget;
+
+        if (sendEncoding === "aes" && !aesKey) {
             showToast("Set a shared AES secret in the Base Converter settings before sending.", Toasts.Type.FAILURE);
             return;
         }
@@ -172,10 +180,6 @@ export default definePlugin({
         clearTimeout(tooltipTimeout);
         tooltipTimeout = setTimeout(() => setShouldShowAutoEncodeTooltip?.(false), 2000);
 
-        message.content = await encode(
-            message.content,
-            settings.store.sendEncoding as EncodeTarget,
-            aesKey
-        );
+        message.content = await encode(message.content, sendEncoding, aesKey);
     },
 });
