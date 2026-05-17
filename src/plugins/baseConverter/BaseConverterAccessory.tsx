@@ -27,8 +27,12 @@ const ConversionSetters = new Map<string, (v: ConversionResult) => void>();
 const DecodedMessages = new Map<string, ConversionResult>();
 const ReplyListeners = new Map<string, Set<(v: ConversionResult) => void>>();
 
+const DECODED_CACHE_MAX = 100;
+
 function notifyDecode(messageId: string, data: ConversionResult) {
     DecodedMessages.set(messageId, data);
+    if (DecodedMessages.size > DECODED_CACHE_MAX)
+        DecodedMessages.delete(DecodedMessages.keys().next().value!);
     ReplyListeners.get(messageId)?.forEach(fn => fn(data));
 }
 

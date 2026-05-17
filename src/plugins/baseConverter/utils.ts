@@ -87,10 +87,17 @@ function base64ToUint8(base64: string): Uint8Array {
 // Derive the key once per secret value and reuse it. PBKDF2 with 100k iterations
 // is intentionally slow for brute-force resistance; caching amortizes that cost
 // to the first encode/decode after the secret changes.
+const KEY_CACHE_MAX = 50;
 const keyCache = new Map<string, CryptoKey>();
 
 async function getAesKey(secret: string): Promise<CryptoKey> {
-    if (keyCache.has(secret)) return keyCache.get(secret)!;
+    if (keyCache.has(secret)) {
+        // Move to end (most-recently-used) so LRU eviction is accurate.
+        const hit = keyCache.get(secret)!;
+        keyCache.delete(secret);
+        keyCache.set(secret, hit);
+        return hit;
+    }
 
     const keyMaterial = await crypto.subtle.importKey(
         "raw",
@@ -116,6 +123,8 @@ async function getAesKey(secret: string): Promise<CryptoKey> {
         ["encrypt", "decrypt"]
     );
 
+    if (keyCache.size >= KEY_CACHE_MAX)
+        keyCache.delete(keyCache.keys().next().value!);
     keyCache.set(secret, key);
     return key;
 }
@@ -124,20 +133,24 @@ async function getAesKey(secret: string): Promise<CryptoKey> {
 
 function decodeBinary(text: string): string {
     const parts = text.trim().split(/\s+/);
-    if (!parts.every(p => /^[01]{1,8}$/.test(p))) throw new Error("Invalid binary");
+    if (!parts.every(p => /^[01]{8}$/.test(p))) throw new Error("Invalid binary");
     return new TextDecoder().decode(new Uint8Array(parts.map(b => parseInt(b, 2))));
 }
 
 function decodeOctal(text: string): string {
     const parts = text.trim().split(/\s+/);
     if (!parts.every(p => /^[0-7]+$/.test(p))) throw new Error("Invalid octal");
-    return new TextDecoder().decode(new Uint8Array(parts.map(o => parseInt(o, 8))));
+    const bytes = parts.map(o => parseInt(o, 8));
+    if (!bytes.every(b => b <= 255)) throw new Error("Octal value out of byte range (0–377)");
+    return new TextDecoder().decode(new Uint8Array(bytes));
 }
 
 function decodeDecimal(text: string): string {
     const parts = text.trim().split(/\s+/);
     if (!parts.every(p => /^\d+$/.test(p))) throw new Error("Invalid decimal");
-    return new TextDecoder().decode(new Uint8Array(parts.map(Number)));
+    const bytes = parts.map(Number);
+    if (!bytes.every(b => b <= 255)) throw new Error("Decimal value out of byte range (0–255)");
+    return new TextDecoder().decode(new Uint8Array(bytes));
 }
 
 function decodeHex(text: string): string {
@@ -213,19 +226,19 @@ async function decodeAes(text: string, secret: string): Promise<string> {
 // ─── Encoders ────────────────────────────────────────────────────────────────
 
 function encodeBinary(text: string): string {
-    return Array.from(text).map(c => c.charCodeAt(0).toString(2).padStart(8, "0")).join(" ");
+    return Array.from(new TextEncoder().encode(text)).map(b => b.toString(2).padStart(8, "0")).join(" ");
 }
 
 function encodeOctal(text: string): string {
-    return Array.from(text).map(c => c.charCodeAt(0).toString(8)).join(" ");
+    return Array.from(new TextEncoder().encode(text)).map(b => b.toString(8)).join(" ");
 }
 
 function encodeDecimal(text: string): string {
-    return Array.from(text).map(c => String(c.charCodeAt(0))).join(" ");
+    return Array.from(new TextEncoder().encode(text)).map(b => String(b)).join(" ");
 }
 
 function encodeHex(text: string): string {
-    return Array.from(text).map(c => c.charCodeAt(0).toString(16).padStart(2, "0")).join(" ");
+    return Array.from(new TextEncoder().encode(text)).map(b => b.toString(16).padStart(2, "0")).join(" ");
 }
 
 function encodeBase32(text: string): string {
@@ -289,13 +302,13 @@ async function encodeAes(text: string, secret: string): Promise<string> {
 export function autoDetectEncoding(text: string): Exclude<EncodeTarget, "aes"> | null {
     const t = text.trim();
 
-    if (/^[01]{8}( [01]{8})+$/.test(t)) return "binary";
+    if (/^[01]{8}( [01]{8})*$/.test(t)) return "binary";
 
     if (/^0x[0-9a-fA-F]{2}( 0x[0-9a-fA-F]{2})+$/.test(t)) return "hex";
 
     if (/^[0-9a-fA-F]{2}( [0-9a-fA-F]{2})+$/.test(t) && /[a-fA-F]/.test(t)) return "hex";
 
-    if (/^[0-9a-fA-F]+$/.test(t) && t.length % 2 === 0 && t.length >= 4 && /[a-fA-F]/.test(t)) return "hex";
+    if (/^[0-9a-fA-F]+$/.test(t) && t.length % 2 === 0 && t.length >= 4 && /[a-fA-F]/.test(t) && /[0-9]/.test(t)) return "hex";
 
     if (/^[A-Z2-7]+=*$/.test(t) && t.length >= 8 && t.length % 8 === 0) return "base32";
 
