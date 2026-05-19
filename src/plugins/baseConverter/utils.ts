@@ -110,9 +110,10 @@ async function getAesKey(secret: string): Promise<CryptoKey> {
     const key = await crypto.subtle.deriveKey(
         {
             name: "PBKDF2",
-            // Fixed salt is acceptable here because the random IV per message
-            // provides semantic security; PBKDF2 still protects against offline
-            // brute-force of the shared password.
+            // Fixed salt means a precomputed dictionary attack on the shared password is
+            // possible across all users of this plugin. The per-message IV provides
+            // ciphertext semantic security but does not protect against offline
+            // password brute-force. Acceptable for casual obfuscation; not for high-value secrets.
             salt: new TextEncoder().encode("vencord-baseconv-v1"),
             iterations: 100_000,
             hash: "SHA-256",
@@ -167,31 +168,25 @@ function decodeBase32(text: string): string {
     const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
     const input = text.trim().toUpperCase().replace(/=+$/, "");
     if (!/^[A-Z2-7]*$/.test(input)) throw new Error("Invalid base32");
-    let bits = 0, value = 0, output = "";
+    const bytes: number[] = [];
+    let bits = 0, value = 0;
     for (const ch of input) {
         const idx = alphabet.indexOf(ch);
-        if (idx === -1) throw new Error(`Invalid character: ${ch}`);
         value = (value << 5) | idx;
         bits += 5;
         if (bits >= 8) {
-            output += String.fromCharCode((value >>> (bits - 8)) & 0xff);
+            bytes.push((value >>> (bits - 8)) & 0xff);
             bits -= 8;
         }
     }
-    return output;
+    return new TextDecoder().decode(new Uint8Array(bytes));
 }
 
 function decodeBase64(text: string): string {
-    try {
-        return decodeURIComponent(escape(atob(text.trim())));
-    } catch {
-        return atob(text.trim());
-    }
+    return new TextDecoder().decode(base64ToUint8(text.trim()));
 }
 
-// Interpret space-separated hex pairs as raw UTF-8 bytes, then decode with
-// TextDecoder. Unlike regular hex decode (which maps each byte to a Latin-1
-// code point), this correctly reassembles multi-byte Unicode sequences.
+// Interpret space-separated hex pairs as raw UTF-8 bytes.
 function decodeUtf8(text: string): string {
     const stripped = text.trim().replace(/0x/gi, "");
     const cleaned = /\s/.test(stripped)
@@ -243,9 +238,10 @@ function encodeHex(text: string): string {
 
 function encodeBase32(text: string): string {
     const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+    const input = new TextEncoder().encode(text);
     let bits = 0, value = 0, output = "";
-    for (let i = 0; i < text.length; i++) {
-        value = (value << 8) | text.charCodeAt(i);
+    for (const b of input) {
+        value = (value << 8) | b;
         bits += 8;
         while (bits >= 5) {
             output += alphabet[(value >>> (bits - 5)) & 31];
@@ -258,11 +254,7 @@ function encodeBase32(text: string): string {
 }
 
 function encodeBase64(text: string): string {
-    try {
-        return btoa(unescape(encodeURIComponent(text)));
-    } catch {
-        return btoa(text);
-    }
+    return uint8ToBase64(new TextEncoder().encode(text));
 }
 
 // Encode text as its raw UTF-8 bytes expressed as space-separated hex pairs.
@@ -314,11 +306,19 @@ export function autoDetectEncoding(text: string): Exclude<EncodeTarget, "aes"> |
 
     if (/^[A-Za-z0-9+/]+=*$/.test(t) && t.length >= 4 && t.length % 4 === 0 && /[a-z+/]/.test(t)) return "base64";
 
+    if (/^\d+( \d+)+$/.test(t)) {
+        const codes = t.split(/\s+/).map(Number);
+        // Digits 8–9 cannot appear in octal, so their presence is an unambiguous decimal signal.
+        if (codes.length >= 3 && codes.every(n => n >= 32 && n <= 126) && /[89]/.test(t)) return "decimal";
+    }
+
     if (/^[0-7]{2,4}( [0-7]{2,4})+$/.test(t)) {
         const codes = t.split(/\s+/).map(o => parseInt(o, 8));
         if (codes.every(n => n >= 32 && n <= 126)) return "octal";
     }
 
+    // Fallback: octal-digit sequences whose decoded values aren't printable ASCII
+    // are more likely decimal byte codes.
     if (/^\d+( \d+)+$/.test(t)) {
         const codes = t.split(/\s+/).map(Number);
         if (codes.length >= 3 && codes.every(n => n >= 32 && n <= 126)) return "decimal";

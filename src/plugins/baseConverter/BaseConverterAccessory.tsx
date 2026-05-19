@@ -56,10 +56,16 @@ export function BaseConverterAccessory({ message }: { message: Message; }) {
     let hasUserKey: boolean;
     if (authorId && authorId === currentUserId) {
         const channel = ChannelStore.getChannel(message.channel_id);
-        const partnerRaw = (channel as any)?.recipients?.[0];
-        const partnerId: string | undefined = typeof partnerRaw === "string" ? partnerRaw : partnerRaw?.id;
-        hasUserKey = !!(partnerId && userKeys?.[partnerId]);
-        effectiveKey = (partnerId && userKeys?.[partnerId]) ? userKeys[partnerId] : aesSecret;
+        const recipients: unknown[] = (channel as any)?.recipients ?? [];
+        if (recipients.length === 1) {
+            const partnerRaw = recipients[0];
+            const partnerId: string | undefined = typeof partnerRaw === "string" ? partnerRaw : (partnerRaw as any)?.id;
+            hasUserKey = !!(partnerId && userKeys?.[partnerId]);
+            effectiveKey = (partnerId && userKeys?.[partnerId]) ? userKeys[partnerId] : aesSecret;
+        } else {
+            hasUserKey = false;
+            effectiveKey = aesSecret;
+        }
     } else {
         hasUserKey = !!(authorId && userKeys?.[authorId]);
         effectiveKey = (authorId && userKeys?.[authorId]) ? userKeys[authorId] : aesSecret;
