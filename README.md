@@ -5,6 +5,9 @@ mass messages deleter (https://github.com/victornpb/undiscord) ported into plugi
 new toggle button for translations.
 
 
+
+# Installation:
+
 Clone the git repository
 
 Run:
