@@ -21,10 +21,11 @@ import { Divider } from "@components/Divider";
 import { FormSwitch } from "@components/FormSwitch";
 import { Margins } from "@utils/margins";
 import { ModalCloseButton, ModalContent, ModalHeader, ModalProps, ModalRoot, openModal } from "@utils/modal";
-import { Forms, SearchableSelect, UserStore, useState } from "@webpack/common";
+import { Forms, SearchableSelect, useEffect, useRef, UserStore, useState } from "@webpack/common";
 
 import { settings } from "./settings";
 import { openUserKeyModal } from "./UserKeyModal";
+import { removeUserKey, useUserKeys } from "./userKeys";
 import { cl, DECODE_OPTIONS, ENCODE_OPTIONS } from "./utils";
 
 function EncodingSelect({
@@ -42,7 +43,7 @@ function EncodingSelect({
         <section className={Margins.bottom16}>
             <Forms.FormTitle tag="h3">{label}</Forms.FormTitle>
             <SearchableSelect
-                options={options as any}
+                options={options}
                 value={currentValue}
                 placeholder="Select an encoding"
                 maxVisibleItems={9}
@@ -56,25 +57,40 @@ function EncodingSelect({
 function AesSecretInput() {
     const aesSecret = settings.use(["aesSecret"]).aesSecret;
     const [visible, setVisible] = useState(false);
+    // Uncontrolled defaultValue prevents React from setting the DOM `value` attribute — partial mitigation against other plugins reading via querySelector; full mitigation needs an isolated iframe.
+    const inputRef = useRef<HTMLInputElement>(null);
+
+    useEffect(() => {
+        if (inputRef.current && inputRef.current.value !== aesSecret) {
+            inputRef.current.value = aesSecret;
+        }
+    }, [aesSecret]);
 
     return (
         <section className={Margins.bottom16}>
             <Forms.FormTitle tag="h3">Shared AES-256-GCM Secret Key</Forms.FormTitle>
             <Forms.FormText className={Margins.bottom8}>
                 Both users must enter the <strong>exact same key</strong> to encrypt and decrypt each other's messages.
-                The key never leaves your device — all encryption happens locally.
-                It is stored in plain text in your local Vencord settings.
+                Encryption and decryption happen locally on your device.
+                Stored in plain text in your Vencord settings — if you have settings sync enabled, this key will be included in that sync.
             </Forms.FormText>
             <div className={cl("secret-row")}>
                 <input
+                    ref={inputRef}
                     type={visible ? "text" : "password"}
                     className={cl("secret-input")}
-                    value={aesSecret}
-                    onChange={e => { settings.store.aesSecret = e.currentTarget.value; }}
+                    defaultValue={aesSecret}
                     placeholder="Enter shared secret…"
                     autoComplete="off"
                     spellCheck={false}
                 />
+                <button
+                    className={cl("secret-toggle")}
+                    onClick={() => { if (inputRef.current) settings.store.aesSecret = inputRef.current.value; }}
+                    type="button"
+                >
+                    Save
+                </button>
                 <button
                     className={cl("secret-toggle")}
                     onClick={() => setVisible(v => !v)}
@@ -115,7 +131,7 @@ function AutoEncodeToggle() {
 }
 
 function UserKeysSection() {
-    const userKeys = settings.use(["userKeys"]).userKeys ?? {};
+    const userKeys = useUserKeys();
     const entries = Object.entries(userKeys);
 
     if (entries.length === 0) return null;
@@ -142,10 +158,7 @@ function UserKeysSection() {
                             </button>
                             <button
                                 className={cl("user-key-btn", "user-key-clear")}
-                                onClick={() => {
-                                    const { [userId]: _, ...rest } = settings.store.userKeys ?? {};
-                                    settings.store.userKeys = rest;
-                                }}
+                                onClick={() => removeUserKey(userId)}
                                 type="button"
                             >
                                 Remove

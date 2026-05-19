@@ -55,15 +55,27 @@ export const BaseConverterIcon: IconComponent = ({ height = 20, width = 20, clas
     </svg>
 );
 
-export let setShouldShowAutoEncodeTooltip: undefined | ((show: boolean) => void);
+let _setter: ((show: boolean) => void) | undefined;
+
+export function setAutoEncodeTooltip(show: boolean) {
+    _setter?.(show);
+}
+
+// If the icon unmounts before the timeout fires, the captured setter becomes
+// the previous mount's no-op setState; the new mount is untouched.
+export function scheduleAutoEncodeTooltipHide(ms: number) {
+    const captured = _setter;
+    if (!captured) return;
+    return setTimeout(() => captured(false), ms);
+}
 
 export const BaseConverterChatBarIcon: ChatBarButtonFactory = ({ isMainChat }) => {
     const { autoEncodeOutgoing } = settings.use(["autoEncodeOutgoing"]);
 
     const [shouldShowTooltip, setter] = useState(false);
     useEffect(() => {
-        setShouldShowAutoEncodeTooltip = setter;
-        return () => { setShouldShowAutoEncodeTooltip = undefined; };
+        _setter = setter;
+        return () => { if (_setter === setter) _setter = undefined; };
     }, []);
 
     if (!isMainChat) return null;

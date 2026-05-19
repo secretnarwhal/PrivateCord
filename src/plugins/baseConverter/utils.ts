@@ -40,28 +40,20 @@ export const ENCODING_LABELS: Record<EncodingType, string> = {
     aes: "AES-256-GCM Encrypted",
 };
 
-export const DECODE_OPTIONS = [
-    { label: "Auto-Detect", value: "auto", default: true },
-    { label: "Binary (Base 2)", value: "binary" },
-    { label: "Octal (Base 8)", value: "octal" },
-    { label: "Decimal (Base 10)", value: "decimal" },
-    { label: "Hexadecimal (Base 16)", value: "hex" },
-    { label: "Base 32", value: "base32" },
-    { label: "Base 64", value: "base64" },
-    { label: "UTF-8 Bytes", value: "utf8" },
-    { label: "AES-256-GCM Encrypted", value: "aes" },
-] as const;
+const DECODE_ENCODING_ORDER: EncodingType[] = ["auto", "binary", "octal", "decimal", "hex", "base32", "base64", "utf8", "aes"];
+const ENCODE_ENCODING_ORDER: EncodeTarget[] = ["binary", "octal", "decimal", "hex", "base32", "base64", "utf8", "aes"];
 
-export const ENCODE_OPTIONS = [
-    { label: "Binary (Base 2)", value: "binary", default: true },
-    { label: "Octal (Base 8)", value: "octal" },
-    { label: "Decimal (Base 10)", value: "decimal" },
-    { label: "Hexadecimal (Base 16)", value: "hex" },
-    { label: "Base 32", value: "base32" },
-    { label: "Base 64", value: "base64" },
-    { label: "UTF-8 Bytes", value: "utf8" },
-    { label: "AES-256-GCM Encrypted", value: "aes" },
-] as const;
+export const DECODE_OPTIONS = DECODE_ENCODING_ORDER.map((v, i) => ({
+    label: ENCODING_LABELS[v],
+    value: v,
+    ...(i === 0 ? { default: true } : {}),
+}));
+
+export const ENCODE_OPTIONS = ENCODE_ENCODING_ORDER.map((v, i) => ({
+    label: ENCODING_LABELS[v],
+    value: v,
+    ...(i === 0 ? { default: true } : {}),
+}));
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -74,7 +66,14 @@ function uint8ToBase64(bytes: Uint8Array): string {
 }
 
 function base64ToUint8(base64: string): Uint8Array {
-    const binary = atob(base64.trim());
+    let normalized = base64
+        .replace(/-/g, "+")
+        .replace(/_/g, "/")
+        .replace(/\s+/g, "");
+    if (normalized.length % 4 !== 0) {
+        normalized += "=".repeat(4 - (normalized.length % 4));
+    }
+    const binary = atob(normalized);
     const bytes = new Uint8Array(binary.length);
     for (let i = 0; i < binary.length; i++) {
         bytes[i] = binary.charCodeAt(i);
@@ -92,7 +91,6 @@ const keyCache = new Map<string, CryptoKey>();
 
 async function getAesKey(secret: string): Promise<CryptoKey> {
     if (keyCache.has(secret)) {
-        // Move to end (most-recently-used) so LRU eviction is accurate.
         const hit = keyCache.get(secret)!;
         keyCache.delete(secret);
         keyCache.set(secret, hit);
@@ -155,7 +153,7 @@ function decodeDecimal(text: string): string {
 }
 
 function decodeHex(text: string): string {
-    const stripped = text.trim().replace(/0x/gi, "");
+    const stripped = text.trim().replace(/(^|\s)0x/gi, "$1");
     const cleaned = /\s/.test(stripped)
         ? stripped.split(/\s+/).map(s => s.padStart(2, "0")).join("")
         : stripped;
@@ -166,7 +164,13 @@ function decodeHex(text: string): string {
 
 function decodeBase32(text: string): string {
     const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
-    const input = text.trim().toUpperCase().replace(/=+$/, "");
+    const trimmed = text.trim().toUpperCase();
+    const paddingMatch = trimmed.match(/=+$/);
+    const padding = paddingMatch ? paddingMatch[0].length : 0;
+    const input = trimmed.replace(/=+$/, "");
+    if (padding > 6) throw new Error("Invalid base32 padding");
+    if (padding > 0 && (input.length + padding) % 8 !== 0) throw new Error("Invalid base32 padding");
+    if ([1, 3, 6].includes(input.length % 8)) throw new Error("Invalid base32 length");
     if (!/^[A-Z2-7]*$/.test(input)) throw new Error("Invalid base32");
     const bytes: number[] = [];
     let bits = 0, value = 0;
@@ -188,7 +192,7 @@ function decodeBase64(text: string): string {
 
 // Interpret space-separated hex pairs as raw UTF-8 bytes.
 function decodeUtf8(text: string): string {
-    const stripped = text.trim().replace(/0x/gi, "");
+    const stripped = text.trim().replace(/(^|\s)0x/gi, "$1");
     const cleaned = /\s/.test(stripped)
         ? stripped.split(/\s+/).map(s => s.padStart(2, "0")).join("")
         : stripped;
@@ -215,7 +219,9 @@ async function decodeAes(text: string, secret: string): Promise<string> {
         ciphertext
     );
 
-    return new TextDecoder().decode(plaintext);
+    // fatal:true so wrong-key/wrong-protocol decrypts that yield invalid UTF-8 throw
+    // instead of producing U+FFFD garbage that looks like a successful decode.
+    return new TextDecoder("utf-8", { fatal: true }).decode(plaintext);
 }
 
 // ─── Encoders ────────────────────────────────────────────────────────────────
@@ -304,7 +310,9 @@ export function autoDetectEncoding(text: string): Exclude<EncodeTarget, "aes"> |
 
     if (/^[A-Z2-7]+=*$/.test(t) && t.length >= 8 && t.length % 8 === 0) return "base32";
 
-    if (/^[A-Za-z0-9+/]+=*$/.test(t) && t.length >= 4 && t.length % 4 === 0 && /[a-z+/]/.test(t)) return "base64";
+    const hasPadding = /=$/.test(t);
+    const hasMixedCaseAndExtra = /[A-Z]/.test(t) && /[a-z]/.test(t) && /[0-9+/]/.test(t);
+    if (/^[A-Za-z0-9+/]+=*$/.test(t) && t.length >= 8 && t.length % 4 === 0 && (hasPadding || hasMixedCaseAndExtra)) return "base64";
 
     if (/^\d+( \d+)+$/.test(t)) {
         const codes = t.split(/\s+/).map(Number);
@@ -312,7 +320,7 @@ export function autoDetectEncoding(text: string): Exclude<EncodeTarget, "aes"> |
         if (codes.length >= 3 && codes.every(n => n >= 32 && n <= 126) && /[89]/.test(t)) return "decimal";
     }
 
-    if (/^[0-7]{2,4}( [0-7]{2,4})+$/.test(t)) {
+    if (/^[0-7]{1,4}( [0-7]{1,4})+$/.test(t)) {
         const codes = t.split(/\s+/).map(o => parseInt(o, 8));
         if (codes.every(n => n >= 32 && n <= 126)) return "octal";
     }
@@ -329,11 +337,22 @@ export function autoDetectEncoding(text: string): Exclude<EncodeTarget, "aes"> |
 
 // ─── Public API ───────────────────────────────────────────────────────────────
 
-export async function decode(
+export type DecodeError = "invalid-format" | "wrong-key" | "too-short" | "no-detection";
+export type DecodeResult = { ok: true; result: ConversionResult } | { ok: false; error: DecodeError };
+
+function classifyError(err: unknown): DecodeError {
+    if (err instanceof Error) {
+        if (err.name === "OperationError") return "wrong-key";
+        if (err.message.toLowerCase().includes("too short")) return "too-short";
+    }
+    return "invalid-format";
+}
+
+export async function decodeWithError(
     text: string,
     encoding: EncodingType,
     aesSecret?: string
-): Promise<ConversionResult | null> {
+): Promise<DecodeResult> {
     try {
         let target: EncodeTarget;
 
@@ -343,38 +362,51 @@ export async function decode(
             if (aesSecret) {
                 try {
                     const aesResult = await decodeAes(text, aesSecret);
-                    if (aesResult && aesResult.trim()) {
-                        return { text: aesResult, encoding: ENCODING_LABELS["aes"] };
+                    if (aesResult !== "" && aesResult != null) {
+                        return { ok: true, result: { text: aesResult, encoding: ENCODING_LABELS["aes"] } };
                     }
                 } catch {
                     // AES failed — fall through to normal auto-detect
                 }
             }
             const detected = autoDetectEncoding(text);
-            if (!detected) return null;
+            if (!detected) return { ok: false, error: "no-detection" };
             target = detected;
         } else {
             target = encoding;
         }
 
         let result: string;
-        switch (target) {
-            case "binary":  result = decodeBinary(text);  break;
-            case "octal":   result = decodeOctal(text);   break;
-            case "decimal": result = decodeDecimal(text); break;
-            case "hex":     result = decodeHex(text);     break;
-            case "base32":  result = decodeBase32(text);  break;
-            case "base64":  result = decodeBase64(text);  break;
-            case "utf8":    result = decodeUtf8(text);    break;
-            case "aes":     result = await decodeAes(text, aesSecret ?? ""); break;
+        try {
+            switch (target) {
+                case "binary":  result = decodeBinary(text);  break;
+                case "octal":   result = decodeOctal(text);   break;
+                case "decimal": result = decodeDecimal(text); break;
+                case "hex":     result = decodeHex(text);     break;
+                case "base32":  result = decodeBase32(text);  break;
+                case "base64":  result = decodeBase64(text);  break;
+                case "utf8":    result = decodeUtf8(text);    break;
+                case "aes":     result = await decodeAes(text, aesSecret ?? ""); break;
+            }
+        } catch (err) {
+            return { ok: false, error: classifyError(err) };
         }
 
-        if (!result || !result.trim()) return null;
+        if (result === "") return { ok: false, error: "invalid-format" };
 
-        return { text: result, encoding: ENCODING_LABELS[target] };
-    } catch {
-        return null;
+        return { ok: true, result: { text: result, encoding: ENCODING_LABELS[target] } };
+    } catch (err) {
+        return { ok: false, error: classifyError(err) };
     }
+}
+
+export async function decode(
+    text: string,
+    encoding: EncodingType,
+    aesSecret?: string
+): Promise<ConversionResult | null> {
+    const res = await decodeWithError(text, encoding, aesSecret);
+    return res.ok ? res.result : null;
 }
 
 export async function encode(

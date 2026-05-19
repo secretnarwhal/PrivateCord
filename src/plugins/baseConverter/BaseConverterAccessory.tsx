@@ -16,14 +16,44 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-import { Message } from "@vencord/discord-types";
-import { ChannelStore, Parser, useEffect, useRef, useState, UserStore } from "@webpack/common";
+import { Channel, Message } from "@vencord/discord-types";
+import { ChannelStore, useEffect, useRef, useState, UserStore } from "@webpack/common";
 
 import { BaseConverterIcon } from "./BaseConverterIcon";
 import { settings } from "./settings";
+import { useUserKeys } from "./userKeys";
 import { cl, ConversionResult, decode, EncodingType } from "./utils";
 
-const ConversionSetters = new Map<string, (v: ConversionResult) => void>();
+export function resolveAesKey(
+    message: Message,
+    channel: Channel | undefined | null,
+    aesSecret: string,
+    userKeys: Record<string, string>,
+    currentUserId: string | undefined,
+): { key: string; hasUserKey: boolean } {
+    const authorId = message.author?.id;
+    const recipients = channel?.recipients ?? [];
+    if (authorId === currentUserId && recipients.length === 1) {
+        const partnerId = recipients[0];
+        const partnerKey = partnerId ? userKeys[partnerId] : undefined;
+        if (partnerKey) return { key: partnerKey, hasUserKey: true };
+        return { key: aesSecret, hasUserKey: false };
+    }
+    const k = authorId ? userKeys[authorId] : undefined;
+    if (k) return { key: k, hasUserKey: true };
+    return { key: aesSecret, hasUserKey: false };
+}
+
+function neutralizeMentions(text: string): string {
+    // Zero-width space breaks Discord's mention parser while remaining invisible.
+    return text
+        .replace(/@everyone/g, "@​everyone")
+        .replace(/@here/g, "@​here")
+        .replace(/<@!?(\d+)>/g, "<@​$1>")
+        .replace(/<@&(\d+)>/g, "<@&​$1>");
+}
+
+const ConversionSetters = new Map<string, Set<(v: ConversionResult) => void>>();
 const DecodedMessages = new Map<string, ConversionResult>();
 const ReplyListeners = new Map<string, Set<(v: ConversionResult) => void>>();
 
@@ -38,44 +68,64 @@ function notifyDecode(messageId: string, data: ConversionResult) {
 
 export function handleDecode(messageId: string, data: ConversionResult) {
     notifyDecode(messageId, data);
-    ConversionSetters.get(messageId)?.(data);
+    ConversionSetters.get(messageId)?.forEach(fn => fn(data));
 }
 
 function findMessageContentEl(messageId: string): HTMLElement | null {
     return document.getElementById(`message-content-${messageId}`);
 }
 
-export function BaseConverterAccessory({ message }: { message: Message; }) {
-    const { autoDecodeReceived, receiveEncoding, aesSecret, userKeys } = settings.use(["autoDecodeReceived", "receiveEncoding", "aesSecret", "userKeys"]);
-    const authorId: string | undefined = (message as any).author?.id;
-    const currentUserId = UserStore.getCurrentUser()?.id;
+function findMessageContentElAsync(messageId: string, signal: AbortSignal): Promise<HTMLElement | null> {
+    return new Promise(resolve => {
+        const immediate = findMessageContentEl(messageId);
+        if (immediate) return resolve(immediate);
+        if (signal.aborted) return resolve(null);
 
-    // For your own messages in a DM the author is YOU, so userKeys[authorId] is
-    // meaningless. Use the DM partner's key instead, since that's who you encoded for.
-    let effectiveKey: string;
-    let hasUserKey: boolean;
-    if (authorId && authorId === currentUserId) {
-        const channel = ChannelStore.getChannel(message.channel_id);
-        const recipients: unknown[] = (channel as any)?.recipients ?? [];
-        if (recipients.length === 1) {
-            const partnerRaw = recipients[0];
-            const partnerId: string | undefined = typeof partnerRaw === "string" ? partnerRaw : (partnerRaw as any)?.id;
-            hasUserKey = !!(partnerId && userKeys?.[partnerId]);
-            effectiveKey = (partnerId && userKeys?.[partnerId]) ? userKeys[partnerId] : aesSecret;
-        } else {
-            hasUserKey = false;
-            effectiveKey = aesSecret;
-        }
-    } else {
-        hasUserKey = !!(authorId && userKeys?.[authorId]);
-        effectiveKey = (authorId && userKeys?.[authorId]) ? userKeys[authorId] : aesSecret;
-    }
+        const root = document.querySelector("main") ?? document.body;
+        const observer = new MutationObserver(() => {
+            const el = findMessageContentEl(messageId);
+            if (el) {
+                cleanup();
+                resolve(el);
+            }
+        });
+
+        const timeout = setTimeout(() => {
+            cleanup();
+            resolve(null);
+        }, 5000);
+
+        const onAbort = () => {
+            cleanup();
+            resolve(null);
+        };
+
+        const cleanup = () => {
+            observer.disconnect();
+            clearTimeout(timeout);
+            signal.removeEventListener("abort", onAbort);
+        };
+
+        signal.addEventListener("abort", onAbort);
+        observer.observe(root, { childList: true, subtree: true });
+    });
+}
+
+const hideRefcounts = new WeakMap<HTMLElement, number>();
+
+export function BaseConverterAccessory({ message }: { message: Message; }) {
+    const { autoDecodeReceived, receiveEncoding, aesSecret } = settings.use(["autoDecodeReceived", "receiveEncoding", "aesSecret"]);
+    const userKeys = useUserKeys();
+    const currentUserId = UserStore.getCurrentUser()?.id;
+    const channel = ChannelStore.getChannel(message.channel_id);
+
+    const { key: effectiveKey, hasUserKey } = resolveAesKey(message, channel, aesSecret, userKeys, currentUserId);
+
     const [result, setResult] = useState<ConversionResult | undefined>();
     const [showOriginal, setShowOriginal] = useState(false);
     const containerRef = useRef<HTMLSpanElement>(null);
 
-    const referencedMessageId = (message as any).messageReference?.messageId
-        ?? (message as any).messageReference?.message_id;
+    const referencedMessageId = message.messageReference?.message_id;
 
     const [referenceResult, setReferenceResult] = useState<ConversionResult | undefined>(
         () => referencedMessageId ? DecodedMessages.get(referencedMessageId) : undefined
@@ -93,9 +143,12 @@ export function BaseConverterAccessory({ message }: { message: Message; }) {
     }, [referencedMessageId]);
 
     useEffect(() => {
-        if ((message as any).vencordEmbeddedBy) return;
+        // vencordEmbeddedBy is runtime-injected by another Vencord plugin (e.g. quotePreview).
+        if ((message as Message & { vencordEmbeddedBy?: unknown }).vencordEmbeddedBy) return;
 
-        ConversionSetters.set(message.id, setResult);
+        const set = ConversionSetters.get(message.id) ?? new Set();
+        set.add(setResult);
+        ConversionSetters.set(message.id, set);
 
         // A per-user key forces AES auto-decode regardless of the autoDecodeReceived toggle.
         if ((autoDecodeReceived || hasUserKey) && message.content) {
@@ -110,23 +163,45 @@ export function BaseConverterAccessory({ message }: { message: Message; }) {
                 .catch(() => { /* silent — auto-decode is best-effort */ });
         }
 
-        return () => void ConversionSetters.delete(message.id);
-    }, [message.id, autoDecodeReceived, hasUserKey, receiveEncoding, effectiveKey]);
+        return () => {
+            set.delete(setResult);
+            if (!set.size) ConversionSetters.delete(message.id);
+        };
+    }, [message.id, message.content, autoDecodeReceived, hasUserKey, receiveEncoding, effectiveKey]);
 
     // Hide the original encrypted message content when decoded; show when toggled
     useEffect(() => {
-        const mc = findMessageContentEl(message.id);
-        if (!mc) return;
-        mc.style.display = result && !showOriginal ? "none" : "";
-        return () => { mc.style.display = ""; };
-    }, [result, showOriginal]);
+        if (!result || showOriginal) return;
+
+        const ac = new AbortController();
+        let mc: HTMLElement | null = null;
+
+        findMessageContentElAsync(message.id, ac.signal).then(el => {
+            if (!el || ac.signal.aborted) return;
+            mc = el;
+            hideRefcounts.set(el, (hideRefcounts.get(el) ?? 0) + 1);
+            el.style.display = "none";
+        });
+
+        return () => {
+            ac.abort();
+            if (!mc) return;
+            const n = (hideRefcounts.get(mc) ?? 1) - 1;
+            if (n <= 0) {
+                mc.style.display = "";
+                hideRefcounts.delete(mc);
+            } else {
+                hideRefcounts.set(mc, n);
+            }
+        };
+    }, [result, showOriginal, message.id]);
 
     // Hide the reply bar's encoded reference text and show the decoded version
     useEffect(() => {
         if (!referenceResult) return;
 
         const listItem = document.querySelector<HTMLElement>(
-            `li[id*="${message.id}"], [data-list-item-id*="${message.id}"]`
+            `li[id$="${message.id}"], [data-list-item-id$="${message.id}"]`
         );
         if (!listItem) return;
 
@@ -135,8 +210,11 @@ export function BaseConverterAccessory({ message }: { message: Message; }) {
         );
         if (!replyContent || !replyContent.parentElement) return;
 
+        listItem.querySelectorAll(`[data-vc-baseconv="1"]`).forEach(n => n.remove());
+
         replyContent.style.display = "none";
         const decoded = document.createElement("span");
+        decoded.setAttribute("data-vc-baseconv", "1");
         decoded.textContent = referenceResult.text;
         replyContent.parentElement.insertBefore(decoded, replyContent);
 
@@ -144,33 +222,38 @@ export function BaseConverterAccessory({ message }: { message: Message; }) {
             replyContent.style.display = "";
             decoded.remove();
         };
-    }, [referenceResult]);
+    }, [referenceResult, message.id]);
 
     // Match decoded text color to the actual message content color
     useEffect(() => {
         if (!result || !containerRef.current) return;
-        const mc = findMessageContentEl(message.id);
-        if (!mc) return;
-        const color = window.getComputedStyle(mc).color;
-        containerRef.current.style.color = color;
-        return () => { if (containerRef.current) containerRef.current.style.color = ""; };
-    }, [result]);
+        const ac = new AbortController();
+        findMessageContentElAsync(message.id, ac.signal).then(mc => {
+            if (!mc || !containerRef.current || ac.signal.aborted) return;
+            const color = window.getComputedStyle(mc).color;
+            containerRef.current.style.color = color;
+        });
+        return () => {
+            ac.abort();
+            if (containerRef.current) containerRef.current.style.color = "";
+        };
+    }, [result, message.id]);
 
     if (!result) return null;
 
     return (
         <span ref={containerRef} className={cl("accessory")}>
             <BaseConverterIcon width={16} height={16} className={cl("accessory-icon")} />
-            <span className={cl("decoded-text")}>{Parser.parse(result.text)}</span>
+            <span className={cl("decoded-text")}>{neutralizeMentions(result.text)}</span>
             <br />
             <span className={cl("meta")}>
                 <span className={cl("encoding-label")}>{result.encoding}</span>
                 {" — "}
-                <button className={cl("toggle-original")} onClick={() => setShowOriginal(v => !v)}>
+                <button type="button" className={cl("toggle-original")} onClick={() => setShowOriginal(v => !v)}>
                     {showOriginal ? "Hide original" : "Show original"}
                 </button>
                 {" — "}
-                <button className={cl("dismiss")} onClick={() => { setResult(undefined); setShowOriginal(false); }}>
+                <button type="button" className={cl("dismiss")} onClick={() => { setResult(undefined); setShowOriginal(false); }}>
                     Dismiss
                 </button>
             </span>

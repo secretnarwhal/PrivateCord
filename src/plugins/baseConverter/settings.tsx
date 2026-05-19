@@ -50,7 +50,7 @@ export const settings = definePluginSettings({
     },
     aesSecret: {
         type: OptionType.STRING,
-        description: "Shared AES-256-GCM secret key — both users must use the same value. Stored in plain text in Vencord settings.",
+        description: "Shared AES-256-GCM secret key — both users must use the same value. Stored in your Vencord settings (synced to cloud if you have settings sync enabled).",
         default: "",
         hidden: true,
     },
@@ -62,6 +62,5 @@ export const settings = definePluginSettings({
             </Button>
         ),
     },
-}).withPrivateSettings<{
-    userKeys: Record<string, string>;
-}>();
+    // userKeys is stored in DataStore (./userKeys.ts) — settings sync uploads to a cloud backend.
+});

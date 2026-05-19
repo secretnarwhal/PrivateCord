@@ -296,18 +296,18 @@ function MassDeleterUI(props) {
                     </div>
                 </Flex>
 
-                <div style={{ 
-                    backgroundColor: "var(--background-secondary-alt)", 
-                    padding: "10px", 
+                <div style={{
+                    backgroundColor: "var(--background-secondary-alt)",
+                    padding: "10px",
                     borderRadius: "5px",
                     height: "150px",
                     overflowY: "auto",
                     fontFamily: "monospace",
                     fontSize: "12px",
                     whiteSpace: "pre-wrap",
-                    color: "var(--text-normal)"
+                    color: "#ffffff"
                 }}>
-                    {manager.logs.map((log, i) => <div key={i}>{log}</div>)}
+                    {manager.logs.map((log, i) => <div key={i} style={{ color: "#ffffff" }}>{log}</div>)}
                     <div ref={logsEndRef} />
                 </div>
                 

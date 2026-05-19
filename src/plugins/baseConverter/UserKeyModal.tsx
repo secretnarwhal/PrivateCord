@@ -19,26 +19,27 @@
 import { BaseText } from "@components/BaseText";
 import { Margins } from "@utils/margins";
 import { ModalCloseButton, ModalContent, ModalHeader, ModalProps, ModalRoot, openModal } from "@utils/modal";
-import { Forms, useState } from "@webpack/common";
+import { Forms, useRef, useState } from "@webpack/common";
 
-import { settings } from "./settings";
+import { getUserKey, removeUserKey, setUserKey } from "./userKeys";
 import { cl } from "./utils";
 
 function UserKeyModal({ rootProps, userId, username }: { rootProps: ModalProps; userId: string; username: string; }) {
-    const existingKey = settings.store.userKeys?.[userId] ?? "";
-    const [key, setKey] = useState(existingKey);
+    const existingKey = getUserKey(userId) ?? "";
+    // Uncontrolled defaultValue prevents React from setting the DOM `value` attribute — partial mitigation against other plugins reading via querySelector; full mitigation needs an isolated iframe.
+    const inputRef = useRef<HTMLInputElement>(null);
     const [visible, setVisible] = useState(false);
+    const [hasContent, setHasContent] = useState(existingKey.trim().length > 0);
 
-    const save = () => {
-        const trimmed = key.trim();
+    const save = async () => {
+        const trimmed = (inputRef.current?.value ?? "").trim();
         if (!trimmed) return;
-        settings.store.userKeys = { ...settings.store.userKeys, [userId]: trimmed };
+        await setUserKey(userId, trimmed);
         rootProps.onClose();
     };
 
-    const clear = () => {
-        const { [userId]: _, ...rest } = settings.store.userKeys ?? {};
-        settings.store.userKeys = rest;
+    const clear = async () => {
+        await removeUserKey(userId);
         rootProps.onClose();
     };
 
@@ -60,10 +61,11 @@ function UserKeyModal({ rootProps, userId, username }: { rootProps: ModalProps; 
                     </Forms.FormText>
                     <div className={cl("secret-row")}>
                         <input
+                            ref={inputRef}
                             type={visible ? "text" : "password"}
                             className={cl("secret-input")}
-                            value={key}
-                            onChange={e => setKey(e.currentTarget.value)}
+                            defaultValue={existingKey}
+                            onInput={e => setHasContent(e.currentTarget.value.trim().length > 0)}
                             onKeyDown={e => { if (e.key === "Enter") save(); }}
                             placeholder="Enter shared secret…"
                             autoComplete="off"
@@ -85,7 +87,7 @@ function UserKeyModal({ rootProps, userId, username }: { rootProps: ModalProps; 
                     <button
                         className={cl("user-key-btn", "user-key-save")}
                         onClick={save}
-                        disabled={!key.trim()}
+                        disabled={!hasContent}
                         type="button"
                     >
                         Save
