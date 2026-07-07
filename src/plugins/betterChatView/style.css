@@ -1,0 +1,67 @@
+/*
+ * Vencord, a Discord client mod
+ * Copyright (c) 2026 secretnarwhal
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ */
+
+/*
+ * Collapse the "left side" of Discord — the server list and the channel/DM
+ * sidebar — leaving just the chat. Scoped to [class*="baseLayer"] so the User
+ * Settings layer (which also uses a "sidebar_" class) is never touched.
+ *
+ * Hiding the grid children makes their grid tracks size to min-content (0), so
+ * the chat's "page" track (1fr) reflows to fill the freed space automatically.
+ */
+.vc-bcv-collapsed [class*="baseLayer"] [class*="sidebar_"],
+.vc-bcv-collapsed:not(.vc-bcv-keep-servers) [class*="baseLayer"] [class*="guilds_"] {
+    display: none !important;
+}
+
+/* Left-edge handle that toggles the collapse. Lives on <body>, sits over the
+   far-left edge at vertical centre, and stays clear of centred modal content. */
+.vc-bcv-handle {
+    position: fixed;
+    left: 0;
+    top: 50%;
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 15px;
+    height: 56px;
+    padding: 0;
+    border: none;
+    border-radius: 0 8px 8px 0;
+    background: var(--background-secondary, #2b2d31);
+    color: var(--interactive-normal, #b5bac1);
+    box-shadow: 1px 0 4px rgb(0 0 0 / 30%);
+    opacity: 0.65;
+    cursor: pointer;
+    transform: translateY(-50%);
+    transition: opacity 0.15s ease, width 0.15s ease, background-color 0.15s ease, color 0.15s ease;
+}
+
+.vc-bcv-handle:hover {
+    width: 19px;
+    background: var(--background-modifier-selected, #35373c);
+    color: var(--interactive-active, #fff);
+    opacity: 1;
+}
+
+/* A chevron drawn from borders: points left (collapse) when expanded, and right
+   (expand) when collapsed. */
+.vc-bcv-handle::before {
+    content: "";
+    width: 6px;
+    height: 6px;
+    margin-left: 3px;
+    border-top: 2px solid currentcolor;
+    border-right: 2px solid currentcolor;
+    transform: rotate(-135deg);
+    transition: transform 0.15s ease, margin 0.15s ease;
+}
+
+.vc-bcv-collapsed .vc-bcv-handle::before {
+    margin-left: -3px;
+    transform: rotate(45deg);
+}

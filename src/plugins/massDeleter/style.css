@@ -1,0 +1,23 @@
+.vc-mass-deleter-badge {
+    position: absolute;
+    top: -2px;
+    right: -2px;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    border: 2px solid var(--background-tertiary);
+}
+
+.vc-mass-deleter-badge-running {
+    background-color: var(--status-warning);
+    animation: vc-mass-deleter-pulse 1s infinite alternate;
+}
+
+.vc-mass-deleter-badge-done {
+    background-color: var(--status-positive);
+}
+
+@keyframes vc-mass-deleter-pulse {
+    from { opacity: 0.5; transform: scale(0.8); }
+    to   { opacity: 1;   transform: scale(1.2); }
+}
