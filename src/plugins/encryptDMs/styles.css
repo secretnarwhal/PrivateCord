@@ -1,0 +1,104 @@
+.vc-encryptdms-accessory {
+    color: inherit;
+    font-style: normal;
+    font-weight: inherit;
+    line-height: 1.375;
+    white-space: break-spaces;
+}
+
+.vc-encryptdms-accessory-icon {
+    margin-right: 0.25em;
+    vertical-align: text-bottom;
+    opacity: 0.5;
+}
+
+.vc-encryptdms-decrypted-text {
+    color: inherit;
+}
+
+.vc-encryptdms-fallback-text {
+    color: var(--text-muted);
+    font-style: italic;
+}
+
+.vc-encryptdms-meta {
+    display: inline;
+    color: var(--text-muted);
+    font-size: 0.8125rem;
+    font-style: italic;
+}
+
+.vc-encryptdms-label {
+    color: var(--interactive-active);
+    font-weight: 600;
+    font-style: normal;
+}
+
+.vc-encryptdms-meta-btn {
+    all: unset;
+    cursor: pointer;
+    color: var(--text-link);
+}
+
+.vc-encryptdms-meta-btn:is(:hover, :focus) {
+    text-decoration: underline;
+}
+
+.vc-encryptdms-key-share {
+    display: flex;
+    align-items: center;
+    gap: 0.5em;
+    flex-wrap: wrap;
+}
+
+.vc-encryptdms-accept-btn {
+    all: unset;
+    cursor: pointer;
+    padding: 0.35em 0.9em;
+    border-radius: 3px;
+    background: var(--button-positive-background);
+    color: #fff;
+    font-size: 0.875rem;
+    font-weight: 500;
+    white-space: nowrap;
+}
+
+.vc-encryptdms-accept-btn:hover {
+    background: var(--button-positive-background-hover, var(--button-positive-background));
+}
+
+.vc-encryptdms-chat-button {
+    scale: 1.05;
+}
+
+.vc-encryptdms-enabled {
+    color: var(--green-360);
+}
+
+/* Import key modal */
+.vc-encryptdms-input {
+    width: 100%;
+    padding: 0.5em 0.75em;
+    background: var(--input-background);
+    border: 1px solid var(--input-background);
+    border-radius: 3px;
+    color: var(--text-normal);
+    font-size: 1rem;
+    outline: none;
+    box-sizing: border-box;
+    font-family: var(--font-code);
+}
+
+.vc-encryptdms-input:focus {
+    border-color: var(--brand-experiment);
+}
+
+.vc-encryptdms-input::placeholder {
+    color: var(--text-muted);
+}
+
+.vc-encryptdms-key-input {
+    resize: vertical;
+    font-size: 0.875rem;
+}
+

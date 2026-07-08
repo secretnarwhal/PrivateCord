@@ -1,0 +1,77 @@
+.vc-invismsg-accessory {
+    color: inherit;
+    font-style: normal;
+    font-weight: inherit;
+    line-height: 1.375;
+    white-space: break-spaces;
+}
+
+.vc-invismsg-accessory-icon {
+    margin-right: 0.25em;
+    vertical-align: text-bottom;
+    opacity: 0.5;
+}
+
+.vc-invismsg-revealed-text {
+    color: inherit;
+}
+
+.vc-invismsg-meta {
+    display: inline;
+    color: var(--text-muted);
+    font-size: 0.8125rem;
+    font-style: italic;
+}
+
+.vc-invismsg-label {
+    color: var(--interactive-active);
+    font-weight: 600;
+    font-style: normal;
+}
+
+.vc-invismsg-error-text {
+    color: var(--text-danger, var(--status-danger));
+    font-style: italic;
+}
+
+.vc-invismsg-reveal-btn {
+    all: unset;
+    cursor: pointer;
+    color: var(--text-link);
+    font-size: 0.8125rem;
+}
+
+.vc-invismsg-reveal-btn:is(:hover, :focus) {
+    text-decoration: underline;
+}
+
+.vc-invismsg-chat-button {
+    scale: 1.05;
+}
+
+/* Compose / reveal modal inputs */
+.vc-invismsg-input {
+    width: 100%;
+    padding: 0.5em 0.75em;
+    background: var(--input-background);
+    border: 1px solid var(--input-background);
+    border-radius: 3px;
+    color: var(--text-normal);
+    font-size: 1rem;
+    outline: none;
+    box-sizing: border-box;
+}
+
+.vc-invismsg-input:focus {
+    border-color: var(--brand-experiment);
+}
+
+.vc-invismsg-input::placeholder {
+    color: var(--text-muted);
+}
+
+.vc-invismsg-hidden-input {
+    resize: vertical;
+    font-size: 0.875rem;
+    font-family: var(--font-code);
+}
