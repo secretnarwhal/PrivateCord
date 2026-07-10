@@ -20,7 +20,7 @@ import { classNameFactory } from "@utils/css";
 import { Logger } from "@utils/Logger";
 
 import { settings } from "./settings";
-import { getChannelPassword } from "./store";
+import { getChannelPassword, getPermanentPassword } from "./store";
 
 export const cl = classNameFactory("vc-invismsg-");
 
@@ -33,4 +33,14 @@ export const logger = new Logger("InvisibleMessages");
  */
 export function getPassword(channelId: string): string {
     return getChannelPassword(channelId) ?? settings.store.defaultPassword;
+}
+
+/**
+ * The password reveal mode uses: the permanent password set from the chat-bar
+ * button's left-click menu if one is set, otherwise the channel/default password.
+ * Used both to auto-decrypt messages and to encrypt secrets typed in the
+ * reveal-mode second chatbar.
+ */
+export function getRevealPassword(channelId: string): string {
+    return getPermanentPassword() || getPassword(channelId);
 }

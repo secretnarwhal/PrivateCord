@@ -17,58 +17,63 @@
 */
 
 import { Message } from "@vencord/discord-types";
-import { UserStore, useState } from "@webpack/common";
+import { useEffect, useState } from "@webpack/common";
 
-import { InvisibleMessagesIcon } from "./InvisibleMessagesIcon";
-import { openRevealPasswordModal } from "./modals";
+import { ElbowIcon } from "./InvisibleMessagesIcon";
+import { useForcedReveal, useRevealMode } from "./revealState";
 import { containsInvisibleMessage, decrypt } from "./stegcloak";
-import { getLastUsedPassword, setLastUsedPassword, useInvisibleMessagesState } from "./store";
-import { cl, getPassword, logger } from "./utils";
+import { useInvisibleMessagesState } from "./store";
+import { cl, getRevealPassword } from "./utils";
 
 function HiddenMessageAccessory({ message }: { message: Message; }) {
     useInvisibleMessagesState();
-    const [text, setText] = useState<string | null>(null);
-    const [error, setError] = useState(false);
+    const revealMode = useRevealMode();
+    // Text revealed manually via the message context menu ("Decrypt Invisible
+    // Message") is stored globally so it shows inline right next to the message.
+    const forcedText = useForcedReveal(message.id);
+    const [autoText, setAutoText] = useState<string | null>(null);
 
-    const reveal = async () => {
-        setError(false);
-
-        const defaultPassword = getLastUsedPassword() ?? getPassword(message.channel_id);
-        const password = await openRevealPasswordModal(defaultPassword);
-        if (password == null) return;
-
-        try {
-            const decrypted = await decrypt(message.content, password);
-            await setLastUsedPassword(password);
-            setText(decrypted);
-        } catch (e) {
-            logger.error("Failed to decrypt invisible message", e);
-            setText(null);
-            setError(true);
+    // While reveal mode is on, auto-decrypt with the permanent/channel password.
+    useEffect(() => {
+        if (!revealMode) {
+            setAutoText(null);
+            return;
         }
-    };
+
+        let cancelled = false;
+        (async () => {
+            try {
+                const decrypted = await decrypt(message.content, getRevealPassword(message.channel_id));
+                if (!cancelled) setAutoText(decrypted);
+            } catch {
+                if (!cancelled) setAutoText(null);
+            }
+        })();
+        return () => { cancelled = true; };
+    }, [revealMode, message.content, message.channel_id]);
+
+    // Prefer the reveal-mode auto-decrypt, but always fall back to a message the
+    // user explicitly decrypted via the context menu.
+    const text = (revealMode ? autoText : null) ?? forcedText ?? null;
+
+    // No placeholder, no "Reveal" button, no error text — a hidden message stays
+    // invisible until it's actually decrypted. Nothing to draw until then.
+    if (text == null) return null;
 
     return (
         <span className={cl("accessory")}>
-            <InvisibleMessagesIcon width={16} height={16} className={cl("accessory-icon")} />
-            {text != null
-                ? <span className={cl("revealed-text")}>{text}</span>
-                : (
-                    <span className={cl("meta")}>
-                        <span className={cl("label")}>Hidden message</span>
-                        {error && <span className={cl("error-text")}> — wrong password?</span>}
-                    </span>
-                )
-            }
-            {" "}
-            <button type="button" className={cl("reveal-btn")} onClick={() => void reveal()}>
-                {text != null ? "Reveal again" : error ? "Try again" : "Reveal"}
-            </button>
+            <ElbowIcon width={16} height={16} className={cl("accessory-icon")} />
+            <span className={cl("revealed-text")}>{text}</span>
         </span>
     );
 }
 
 export function InvisibleMessagesAccessory({ message }: { message: Message; }) {
+    // Hooks must run before any early return, and must react to reveal-mode /
+    // forced-reveal changes so a message can appear the moment it's decrypted.
+    const revealMode = useRevealMode();
+    const forcedText = useForcedReveal(message?.id ?? "");
+
     const content = message?.content;
     if (!content) return null;
 
@@ -78,8 +83,10 @@ export function InvisibleMessagesAccessory({ message }: { message: Message; }) {
 
     if (!containsInvisibleMessage(content)) return null;
 
-    // Don't show a redundant reveal chip on your own messages — you authored the secret.
-    if (message.author?.id === UserStore.getCurrentUser()?.id) return null;
+    // The only ways to decrypt are reveal mode (the right-click chat-bar toggle) or
+    // the "Decrypt Invisible Message" context-menu item. Outside those, an invisible
+    // message is left completely untouched — no chip ever pops up under it.
+    if (!revealMode && forcedText == null) return null;
 
     return <HiddenMessageAccessory message={message} />;
 }

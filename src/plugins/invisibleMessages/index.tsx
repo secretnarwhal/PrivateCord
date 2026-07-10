@@ -20,17 +20,45 @@ import "./styles.css";
 
 import { ApplicationCommandInputType, ApplicationCommandOptionType, findOption, sendBotMessage } from "@api/Commands";
 import { findGroupChildrenByChildId, NavContextMenuPatchCallback } from "@api/ContextMenu";
+import { addMessagePreSendListener, MessageSendListener, removeMessagePreSendListener } from "@api/MessageEvents";
 import definePlugin from "@utils/types";
 import { Message } from "@vencord/discord-types";
-import { Menu } from "@webpack/common";
+import { Menu, showToast, Toasts } from "@webpack/common";
 
 import { InvisibleMessagesAccessory } from "./InvisibleMessagesAccessory";
 import { InvisibleMessagesChatBarIcon, InvisibleMessagesIcon } from "./InvisibleMessagesIcon";
 import { revealInvisibleMessage } from "./modals";
+import { getSecretDraft, isRevealMode, setSecretDraft } from "./revealState";
 import { settings } from "./settings";
 import { containsInvisibleMessage, encrypt } from "./stegcloak";
 import { initInvisibleMessagesState } from "./store";
-import { getPassword, logger } from "./utils";
+import { getPassword, getRevealPassword, logger } from "./utils";
+
+// While reveal mode is on, the message you send in the normal chat bar is the
+// visible "cover" and whatever you typed in the second chatbar is woven into it
+// as the hidden secret (encrypted with the permanent/channel password).
+const presendListener: MessageSendListener = async (channelId, messageObj) => {
+    if (!isRevealMode()) return;
+
+    const secret = getSecretDraft(channelId).trim();
+    if (!secret) return;
+
+    const cover = messageObj.content;
+    if (cover.split(" ").filter(Boolean).length < 2) {
+        showToast("Your message needs at least 2 words to hide a secret inside it", Toasts.Type.FAILURE);
+        return { cancel: true };
+    }
+
+    try {
+        const encoded = await encrypt(getRevealPassword(channelId), secret, cover);
+        messageObj.content = encoded;
+        setSecretDraft(channelId, "");
+    } catch (e) {
+        logger.error("Failed to hide secret from the reveal-mode chatbar", e);
+        showToast("Failed to hide the secret message", Toasts.Type.FAILURE);
+        return { cancel: true };
+    }
+};
 
 const messageCtxPatch: NavContextMenuPatchCallback = (children, { message }: { message: Message; }) => {
     if (!containsInvisibleMessage(message?.content)) return;
@@ -57,6 +85,11 @@ export default definePlugin({
 
     async start() {
         await initInvisibleMessagesState();
+        addMessagePreSendListener(presendListener);
+    },
+
+    stop() {
+        removeMessagePreSendListener(presendListener);
     },
 
     contextMenus: {

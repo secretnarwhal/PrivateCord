@@ -1,4 +1,9 @@
+/* A decrypted secret shown inline beneath its cover message, tied to it with an
+   elbow connector — only ever rendered once the message is actually revealed. */
 .vc-invismsg-accessory {
+    display: inline-flex;
+    align-items: flex-start;
+    gap: 0.375em;
     color: inherit;
     font-style: normal;
     font-weight: inherit;
@@ -7,46 +12,76 @@
 }
 
 .vc-invismsg-accessory-icon {
-    margin-right: 0.25em;
-    vertical-align: text-bottom;
-    opacity: 0.5;
+    flex: 0 0 auto;
+    margin-top: 0.05em;
+    color: var(--text-muted);
+    opacity: 0.85;
 }
 
 .vc-invismsg-revealed-text {
-    color: inherit;
-}
-
-.vc-invismsg-meta {
-    display: inline;
-    color: var(--text-muted);
-    font-size: 0.8125rem;
-    font-style: italic;
-}
-
-.vc-invismsg-label {
-    color: var(--interactive-active);
-    font-weight: 600;
+    /* Was `inherit`, which picked up the muted/near-invisible color of the
+       accessory row and rendered dark-on-dark. Use the normal message color. */
+    color: var(--text-default, var(--text-normal));
     font-style: normal;
-}
-
-.vc-invismsg-error-text {
-    color: var(--text-danger, var(--status-danger));
-    font-style: italic;
-}
-
-.vc-invismsg-reveal-btn {
-    all: unset;
-    cursor: pointer;
-    color: var(--text-link);
-    font-size: 0.8125rem;
-}
-
-.vc-invismsg-reveal-btn:is(:hover, :focus) {
-    text-decoration: underline;
 }
 
 .vc-invismsg-chat-button {
     scale: 1.05;
+}
+
+/* Reveal mode active: tint the chat-bar eye so the toggle state is obvious. */
+.vc-invismsg-chat-button-active {
+    color: var(--text-brand, var(--brand-experiment, var(--brand-500)));
+}
+
+/* Second chatbar (reveal mode): floats above the real chat bar via a portal. */
+.vc-invismsg-secondbar-anchor {
+    display: none;
+}
+
+.vc-invismsg-secondbar {
+    position: fixed;
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    gap: 0.5em;
+    padding: 0.5em 0.75em;
+    background: var(--background-secondary-alt, var(--background-secondary));
+    border: 1px solid var(--brand-experiment, var(--brand-500));
+    border-radius: 8px;
+    box-shadow: var(--elevation-high, 0 8px 16px rgb(0 0 0 / 24%));
+    box-sizing: border-box;
+}
+
+.vc-invismsg-secondbar-icon {
+    flex: 0 0 auto;
+    color: var(--interactive-active, var(--text-default, var(--text-normal)));
+    opacity: 0.9;
+}
+
+/* A small "SECRET" tag so this floating bar reads as its own thing and is never
+   mistaken for the real chatbox it sits above. */
+.vc-invismsg-secondbar-label {
+    flex: 0 0 auto;
+    color: var(--text-brand, var(--brand-experiment, var(--brand-500)));
+    font-size: 0.6875rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+
+.vc-invismsg-secondbar-input {
+    flex: 1;
+    min-width: 0;
+    background: transparent;
+    border: none;
+    outline: none;
+    color: var(--text-default, var(--text-normal));
+    font-size: 1rem;
+}
+
+.vc-invismsg-secondbar-input::placeholder {
+    color: var(--text-muted);
 }
 
 /* Compose / reveal modal inputs */

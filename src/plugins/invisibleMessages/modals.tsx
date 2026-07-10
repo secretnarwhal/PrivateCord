@@ -16,15 +16,15 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-import { sendBotMessage } from "@api/Commands";
 import { sendMessage } from "@utils/discord";
 import { Margins } from "@utils/margins";
 import { Message, RenderModalProps } from "@vencord/discord-types";
 import { Forms, Modal, openModal, SelectedChannelStore, showToast, Toasts, useRef } from "@webpack/common";
 
+import { setForcedReveal } from "./revealState";
 import { decrypt, encrypt } from "./stegcloak";
-import { getLastUsedPassword, setLastUsedPassword } from "./store";
-import { cl, getPassword, logger } from "./utils";
+import { getLastUsedPassword, getPermanentPassword, setLastUsedPassword, setPermanentPassword } from "./store";
+import { cl, getPassword, getRevealPassword, logger } from "./utils";
 
 // ─── Compose an invisible message ─────────────────────────────────────────────
 
@@ -127,6 +127,58 @@ export function openComposeModal(channelId?: string) {
     openModal(props => <ComposeModal modalProps={props} channelId={channelId} />);
 }
 
+// ─── Set the permanent reveal-mode password ───────────────────────────────────
+
+function SetPasswordModal({ modalProps }: { modalProps: RenderModalProps; }) {
+    const inputRef = useRef<HTMLInputElement>(null);
+
+    const save = async () => {
+        const value = (inputRef.current?.value ?? "").trim();
+        await setPermanentPassword(value);
+        showToast(
+            value ? "Password saved" : "Password cleared — using channel / default password",
+            Toasts.Type.SUCCESS
+        );
+        modalProps.onClose();
+    };
+
+    return (
+        <Modal
+            {...modalProps}
+            size="sm"
+            title="Invisible Messages Password"
+            actions={[
+                { text: "Save", variant: "primary", onClick: () => void save() },
+                { text: "Cancel", variant: "secondary", onClick: modalProps.onClose },
+            ]}
+        >
+            <section className={Margins.bottom16}>
+                <Forms.FormTitle tag="h3">Permanent password</Forms.FormTitle>
+                <Forms.FormText className={Margins.bottom8}>
+                    Reveal Mode auto-decrypts messages with this password, and secrets typed in
+                    the reveal-mode chatbar are encrypted with it. Leave empty to fall back to the
+                    channel or default password. Tip: right-click the chat-bar button to toggle Reveal Mode.
+                </Forms.FormText>
+                <input
+                    ref={inputRef}
+                    type="text"
+                    className={cl("input")}
+                    defaultValue={getPermanentPassword()}
+                    placeholder="Channel / default password"
+                    autoComplete="off"
+                    spellCheck={false}
+                    autoFocus
+                    onKeyDown={e => { if (e.key === "Enter") void save(); }}
+                />
+            </section>
+        </Modal>
+    );
+}
+
+export function openSetPasswordModal() {
+    openModal(props => <SetPasswordModal modalProps={props} />);
+}
+
 // ─── Prompt for a password to reveal a hidden message ─────────────────────────
 
 function RevealPasswordModal({ modalProps, defaultPassword, onResult }: {
@@ -201,12 +253,13 @@ export function openRevealPasswordModal(defaultPassword: string): Promise<string
 
 /**
  * Full reveal flow used by the message context menu: prompt for a password
- * (defaulting to the last-used or channel/default password), decrypt, and post
- * the result locally via a Clyde message. On success, remember the password.
+ * (defaulting to the last-used or channel/default password), decrypt, and show
+ * the result inline right next to the message (not via a Clyde bot message). On
+ * success, remember the password.
  */
 export async function revealInvisibleMessage(message: Message) {
     const channelId = message.channel_id;
-    const defaultPassword = getLastUsedPassword() ?? getPassword(channelId);
+    const defaultPassword = getLastUsedPassword() ?? getRevealPassword(channelId);
 
     const password = await openRevealPasswordModal(defaultPassword);
     if (password == null) return;
@@ -214,7 +267,7 @@ export async function revealInvisibleMessage(message: Message) {
     try {
         const text = await decrypt(message.content, password);
         await setLastUsedPassword(password);
-        sendBotMessage(channelId, { content: `Decrypted message:\n${text}` });
+        setForcedReveal(message.id, text);
     } catch (e) {
         logger.error("Failed to decrypt invisible message", e);
         showToast("Could not decrypt — wrong password?", Toasts.Type.FAILURE);

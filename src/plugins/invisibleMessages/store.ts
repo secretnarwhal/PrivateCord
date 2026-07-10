@@ -26,12 +26,17 @@ import { useEffect, useState } from "@webpack/common";
 
 const CHANNEL_PASSWORDS_KEY = "invisibleMessages_channelPasswords_v1";
 const LAST_PASSWORD_KEY = "invisibleMessages_lastPassword_v1";
+const PERMANENT_PASSWORD_KEY = "invisibleMessages_permanentPassword_v1";
 
 /** channelId -> password */
 type ChannelPasswordMap = Record<string, string>;
 
 let channelPasswords: ChannelPasswordMap = {};
 let lastUsedPassword: string | undefined;
+// The user-set "permanent" password used by reveal mode (auto-decrypt) and by
+// the reveal-mode second chatbar. Empty string means "fall back to the channel
+// or default password".
+let permanentPassword = "";
 
 const subscribers = new Set<() => void>();
 
@@ -53,13 +58,15 @@ export function initInvisibleMessagesState(): Promise<void> {
 }
 
 async function loadState(): Promise<void> {
-    const [storedChannelPasswords, storedLastPassword] = await Promise.all([
+    const [storedChannelPasswords, storedLastPassword, storedPermanentPassword] = await Promise.all([
         DataStore.get<ChannelPasswordMap>(CHANNEL_PASSWORDS_KEY),
         DataStore.get<string>(LAST_PASSWORD_KEY),
+        DataStore.get<string>(PERMANENT_PASSWORD_KEY),
     ]);
 
     channelPasswords = storedChannelPasswords ?? {};
     lastUsedPassword = storedLastPassword ?? undefined;
+    permanentPassword = storedPermanentPassword ?? "";
     notify();
 }
 
@@ -99,6 +106,17 @@ export function getLastUsedPassword(): string | undefined {
 export async function setLastUsedPassword(password: string): Promise<void> {
     lastUsedPassword = password;
     await DataStore.set(LAST_PASSWORD_KEY, password);
+    notify();
+}
+
+/** The permanent password set from the chat-bar button's left-click menu ("" = unset). */
+export function getPermanentPassword(): string {
+    return permanentPassword;
+}
+
+export async function setPermanentPassword(password: string): Promise<void> {
+    permanentPassword = password;
+    await DataStore.set(PERMANENT_PASSWORD_KEY, password);
     notify();
 }
 
