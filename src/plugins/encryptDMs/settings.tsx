@@ -18,56 +18,44 @@
 
 import { definePluginSettings } from "@api/Settings";
 import { Button } from "@components/Button";
-import { Flex } from "@components/Flex";
-import { copyWithToast } from "@utils/discord";
 import { OptionType } from "@utils/types";
-import { Alerts, showToast, Toasts } from "@webpack/common";
 
-import { KEY_PREFIX } from "./crypto";
-import { openImportKeyModal } from "./ImportKeyModal";
-import { getIdentity, regenerateIdentity } from "./keys";
-
-function copyMyKey() {
-    const identity = getIdentity();
-    if (!identity) {
-        showToast("EncryptDMs identity is not ready yet", Toasts.Type.FAILURE);
-        return;
-    }
-    copyWithToast(KEY_PREFIX + identity.publicKey, "Public key copied to clipboard!");
-}
-
-function confirmRegenerate() {
-    Alerts.show({
-        title: "Regenerate EncryptDMs Identity?",
-        body: "This creates a brand-new RSA keypair. You will no longer be able to decrypt any previously received messages, and every peer must accept your new key before encrypted chat works again.",
-        confirmText: "Regenerate",
-        cancelText: "Cancel",
-        onConfirm() {
-            regenerateIdentity()
-                .then(() => showToast("New identity generated. Send your new key to your chats.", Toasts.Type.SUCCESS))
-                .catch(() => showToast("Failed to regenerate identity", Toasts.Type.FAILURE));
-        },
-    });
-}
+import { openEncryptDMsModal } from "./EncryptDMsModal";
 
 export const settings = definePluginSettings({
-    manageKeys: {
+    autoDecodeReceived: {
+        type: OptionType.BOOLEAN,
+        description: "Automatically decrypt encrypted incoming messages using your shared secret or per-user keys",
+        default: false,
+    },
+    autoEncodeOutgoing: {
+        type: OptionType.BOOLEAN,
+        description: "Automatically encrypt your messages before sending. Shift+click or right-click the chat bar button to toggle",
+        default: false,
+    },
+    encryptAttachments: {
+        type: OptionType.BOOLEAN,
+        description: "Also encrypt file attachments when a message is encrypted. Recipients with this plugin and the matching key see them decrypted in-line; everyone else sees an opaque .vcenc file.",
+        default: true,
+    },
+    aesSecret: {
+        type: OptionType.STRING,
+        description: "Shared AES-256-GCM secret key — both users must use the same value. Stored in your Vencord settings (synced to cloud if you have settings sync enabled).",
+        default: "",
+        hidden: true,
+    },
+    linkPreviews: {
+        type: OptionType.BOOLEAN,
+        description: "Show a click-to-load preview button for links in decrypted messages (desktop only). Nothing is fetched until you click — and clicking reveals your IP to that link's server, which is why it isn't automatic.",
+        default: true,
+    },
+    manageSettings: {
         type: OptionType.COMPONENT,
-        description: "Manage your EncryptDMs keys",
         component: () => (
-            <Flex>
-                <Button onClick={copyMyKey}>
-                    Copy My Public Key
-                </Button>
-                <Button variant="secondary" onClick={openImportKeyModal}>
-                    Import a Peer's Public Key
-                </Button>
-                <Button variant="dangerPrimary" onClick={confirmRegenerate}>
-                    Regenerate Identity…
-                </Button>
-            </Flex>
+            <Button onClick={openEncryptDMsModal}>
+                Manage encryption settings
+            </Button>
         ),
     },
-    // The RSA identity, accepted peer keys, and per-channel state live in
-    // DataStore (./keys.ts) — never in settings, which may be cloud-synced.
+    // userKeys is stored in DataStore (./userKeys.ts) — settings sync uploads to a cloud backend.
 });

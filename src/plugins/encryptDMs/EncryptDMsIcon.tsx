@@ -17,12 +17,14 @@
 */
 
 import { ChatBarButton, ChatBarButtonFactory } from "@api/ChatButtons";
+import { TooltipContainer } from "@components/TooltipContainer";
 import { classes } from "@utils/misc";
 import { IconComponent } from "@utils/types";
-import { showToast, Toasts, UserStore } from "@webpack/common";
+import { useEffect, useState } from "@webpack/common";
 
-import { getKnownKeysForChannel, isChannelEnabled, setChannelEnabled, useEncryptDMsState } from "./keys";
-import { cl, sendMyKey } from "./utils";
+import { openEncryptDMsModal } from "./EncryptDMsModal";
+import { settings } from "./settings";
+import { cl } from "./utils";
 
 /** Padlock icon, mirroring the Android plugin's ic_channel_text_locked indicator. */
 export const EncryptDMsIcon: IconComponent = ({ height = 20, width = 20, className }) => (
@@ -37,36 +39,55 @@ export const EncryptDMsIcon: IconComponent = ({ height = 20, width = 20, classNa
     </svg>
 );
 
-export const EncryptDMsChatBarIcon: ChatBarButtonFactory = ({ isMainChat, channel }) => {
-    useEncryptDMsState();
+let _setter: ((show: boolean) => void) | undefined;
 
-    if (!isMainChat || !channel?.isPrivate?.()) return null;
+export function setAutoEncodeTooltip(show: boolean) {
+    _setter?.(show);
+}
 
-    const enabled = isChannelEnabled(channel.id);
-    const me = UserStore.getCurrentUser()?.id;
-    const hasPeerKeys = Object.keys(getKnownKeysForChannel(channel.id, channel.recipients ?? [])).some(id => id !== me);
+// If the icon unmounts before the timeout fires, the captured setter becomes
+// the previous mount's no-op setState; the new mount is untouched.
+export function scheduleAutoEncodeTooltipHide(ms: number) {
+    const captured = _setter;
+    if (!captured) return;
+    return setTimeout(() => captured(false), ms);
+}
 
-    const toggle = async () => {
-        await setChannelEnabled(channel.id, !enabled);
-        showToast(!enabled ? "Encrypted chat enabled" : "Encrypted chat disabled", Toasts.Type.SUCCESS);
+export const EncryptDMsChatBarIcon: ChatBarButtonFactory = ({ isMainChat }) => {
+    const { autoEncodeOutgoing } = settings.use(["autoEncodeOutgoing"]);
+
+    const [shouldShowTooltip, setter] = useState(false);
+    useEffect(() => {
+        _setter = setter;
+        return () => { if (_setter === setter) _setter = undefined; };
+    }, []);
+
+    if (!isMainChat) return null;
+
+    const toggle = () => {
+        settings.store.autoEncodeOutgoing = !autoEncodeOutgoing;
     };
 
-    const tooltip = enabled
-        ? hasPeerKeys
-            ? "Encrypted Chat: On — click to disable, right-click to send your key"
-            : "Encrypted Chat: On (no accepted peer keys!) — right-click to send your key"
-        : "Encrypted Chat: Off — click to enable, right-click to send your key";
-
-    return (
+    const button = (
         <ChatBarButton
-            tooltip={tooltip}
+            tooltip={autoEncodeOutgoing ? "Auto-Encrypt Enabled — click to open settings" : "Open EncryptDMs"}
             onClick={e => {
-                if (e.shiftKey) return void sendMyKey(channel.id);
-                toggle();
+                if (e.shiftKey) return toggle();
+                openEncryptDMsModal();
             }}
-            onContextMenu={() => void sendMyKey(channel.id)}
+            onContextMenu={toggle}
+            buttonProps={{ "aria-haspopup": "dialog" }}
         >
-            <EncryptDMsIcon className={cl({ "chat-button": true, enabled })} />
+            <EncryptDMsIcon className={cl({ "auto-encode": autoEncodeOutgoing, "chat-button": true })} />
         </ChatBarButton>
     );
+
+    if (shouldShowTooltip && autoEncodeOutgoing)
+        return (
+            <TooltipContainer text="Auto-Encrypt Enabled" forceOpen>
+                {button}
+            </TooltipContainer>
+        );
+
+    return button;
 };

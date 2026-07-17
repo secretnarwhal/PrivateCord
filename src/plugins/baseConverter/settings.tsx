@@ -48,12 +48,6 @@ export const settings = definePluginSettings({
         description: "Automatically encode your messages before sending. Shift+click or right-click the chat bar button to toggle",
         default: false,
     },
-    aesSecret: {
-        type: OptionType.STRING,
-        description: "Shared AES-256-GCM secret key — both users must use the same value. Stored in your Vencord settings (synced to cloud if you have settings sync enabled).",
-        default: "",
-        hidden: true,
-    },
     manageSettings: {
         type: OptionType.COMPONENT,
         component: () => (
@@ -62,5 +56,4 @@ export const settings = definePluginSettings({
             </Button>
         ),
     },
-    // userKeys is stored in DataStore (./userKeys.ts) — settings sync uploads to a cloud backend.
 });

@@ -24,7 +24,7 @@
 import * as DataStore from "@api/DataStore";
 import { useEffect, useState } from "@webpack/common";
 
-const STORE_KEY = "baseConverter_userKeys_v1";
+const STORE_KEY = "encryptDMs_userKeys_v1";
 
 type UserKeyMap = Record<string, string>;
 
@@ -37,7 +37,7 @@ const ready: Promise<void> = DataStore.get<UserKeyMap>(STORE_KEY).then(v => {
     notify();
 }).catch(e => {
     loaded = true;
-    console.error("[BaseConverter] Failed to load user keys from DataStore:", e);
+    console.error("[EncryptDMs] Failed to load user keys from DataStore:", e);
 });
 
 function notify() {

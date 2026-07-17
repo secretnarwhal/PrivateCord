@@ -16,42 +16,19 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-import { Channel, Message } from "@vencord/discord-types";
-import { ChannelStore, useEffect, useRef, useState, UserStore } from "@webpack/common";
+import { classes } from "@utils/misc";
+import { Message } from "@vencord/discord-types";
+import { findCssClassesLazy } from "@webpack";
+import { Parser, useEffect, useRef, useState } from "@webpack/common";
 
 import { BaseConverterIcon } from "./BaseConverterIcon";
 import { settings } from "./settings";
-import { useUserKeys } from "./userKeys";
 import { cl, ConversionResult, decode, EncodingType } from "./utils";
 
-export function resolveAesKey(
-    message: Message,
-    channel: Channel | undefined | null,
-    aesSecret: string,
-    userKeys: Record<string, string>,
-    currentUserId: string | undefined,
-): { key: string; hasUserKey: boolean } {
-    const authorId = message.author?.id;
-    const recipients = channel?.recipients ?? [];
-    if (authorId === currentUserId && recipients.length === 1) {
-        const partnerId = recipients[0];
-        const partnerKey = partnerId ? userKeys[partnerId] : undefined;
-        if (partnerKey) return { key: partnerKey, hasUserKey: true };
-        return { key: aesSecret, hasUserKey: false };
-    }
-    const k = authorId ? userKeys[authorId] : undefined;
-    if (k) return { key: k, hasUserKey: true };
-    return { key: aesSecret, hasUserKey: false };
-}
-
-function neutralizeMentions(text: string): string {
-    // Zero-width space breaks Discord's mention parser while remaining invisible.
-    return text
-        .replace(/@everyone/g, "@​everyone")
-        .replace(/@here/g, "@​here")
-        .replace(/<@!?(\d+)>/g, "<@​$1>")
-        .replace(/<@&(\d+)>/g, "<@&​$1>");
-}
+// Discord's real message-content markup classes — applying them to our decoded
+// text makes bold/italic/code/spoilers/headers/custom-emoji render exactly like a
+// native message instead of unstyled plain text.
+const MarkupClasses = findCssClassesLazy("markup", "messageContent");
 
 const ConversionSetters = new Map<string, Set<(v: ConversionResult) => void>>();
 const DecodedMessages = new Map<string, ConversionResult>();
@@ -114,16 +91,11 @@ function findMessageContentElAsync(messageId: string, signal: AbortSignal): Prom
 const hideRefcounts = new WeakMap<HTMLElement, number>();
 
 export function BaseConverterAccessory({ message }: { message: Message; }) {
-    const { autoDecodeReceived, receiveEncoding, aesSecret } = settings.use(["autoDecodeReceived", "receiveEncoding", "aesSecret"]);
-    const userKeys = useUserKeys();
-    const currentUserId = UserStore.getCurrentUser()?.id;
-    const channel = ChannelStore.getChannel(message.channel_id);
-
-    const { key: effectiveKey, hasUserKey } = resolveAesKey(message, channel, aesSecret, userKeys, currentUserId);
+    const { autoDecodeReceived, receiveEncoding } = settings.use(["autoDecodeReceived", "receiveEncoding"]);
 
     const [result, setResult] = useState<ConversionResult | undefined>();
     const [showOriginal, setShowOriginal] = useState(false);
-    const containerRef = useRef<HTMLSpanElement>(null);
+    const containerRef = useRef<HTMLDivElement>(null);
 
     const referencedMessageId = message.messageReference?.message_id;
 
@@ -150,10 +122,8 @@ export function BaseConverterAccessory({ message }: { message: Message; }) {
         set.add(setResult);
         ConversionSetters.set(message.id, set);
 
-        // A per-user key forces AES auto-decode regardless of the autoDecodeReceived toggle.
-        if ((autoDecodeReceived || hasUserKey) && message.content) {
-            const encoding: EncodingType = hasUserKey ? "aes" : receiveEncoding as EncodingType;
-            decode(message.content, encoding, effectiveKey)
+        if (autoDecodeReceived && message.content) {
+            decode(message.content, receiveEncoding as EncodingType)
                 .then(decoded => {
                     if (decoded) {
                         setResult(decoded);
@@ -167,7 +137,7 @@ export function BaseConverterAccessory({ message }: { message: Message; }) {
             set.delete(setResult);
             if (!set.size) ConversionSetters.delete(message.id);
         };
-    }, [message.id, message.content, autoDecodeReceived, hasUserKey, receiveEncoding, effectiveKey]);
+    }, [message.id, message.content, autoDecodeReceived, receiveEncoding]);
 
     // Hide the original encrypted message content when decoded; show when toggled
     useEffect(() => {
@@ -210,7 +180,7 @@ export function BaseConverterAccessory({ message }: { message: Message; }) {
         );
         if (!replyContent || !replyContent.parentElement) return;
 
-        listItem.querySelectorAll(`[data-vc-baseconv="1"]`).forEach(n => n.remove());
+        listItem.querySelectorAll("[data-vc-baseconv=\"1\"]").forEach(n => n.remove());
 
         replyContent.style.display = "none";
         const decoded = document.createElement("span");
@@ -230,7 +200,7 @@ export function BaseConverterAccessory({ message }: { message: Message; }) {
         const ac = new AbortController();
         findMessageContentElAsync(message.id, ac.signal).then(mc => {
             if (!mc || !containerRef.current || ac.signal.aborted) return;
-            const color = window.getComputedStyle(mc).color;
+            const { color } = window.getComputedStyle(mc);
             containerRef.current.style.color = color;
         });
         return () => {
@@ -242,21 +212,31 @@ export function BaseConverterAccessory({ message }: { message: Message; }) {
     if (!result) return null;
 
     return (
-        <span ref={containerRef} className={cl("accessory")}>
+        <div ref={containerRef} className={cl("accessory")}>
             <BaseConverterIcon width={16} height={16} className={cl("accessory-icon")} />
-            <span className={cl("decoded-text")}>{neutralizeMentions(result.text)}</span>
-            <br />
-            <span className={cl("meta")}>
-                <span className={cl("encoding-label")}>{result.encoding}</span>
-                {" — "}
-                <button type="button" className={cl("toggle-original")} onClick={() => setShowOriginal(v => !v)}>
-                    {showOriginal ? "Hide original" : "Show original"}
-                </button>
-                {" — "}
-                <button type="button" className={cl("dismiss")} onClick={() => { setResult(undefined); setShowOriginal(false); }}>
-                    Dismiss
-                </button>
-            </span>
-        </span>
+            <div className={cl("content")}>
+                <div className={classes(MarkupClasses.markup, MarkupClasses.messageContent, cl("decoded-text"))}>
+                    {Parser.parse(result.text, true, {
+                        channelId: message.channel_id,
+                        messageId: message.id,
+                        allowLinks: true,
+                        allowHeading: true,
+                        allowList: true,
+                        allowEmojiLinks: true,
+                    })}
+                </div>
+                <span className={cl("meta")}>
+                    <span className={cl("encoding-label")}>{result.encoding}</span>
+                    {" — "}
+                    <button type="button" className={cl("toggle-original")} onClick={() => setShowOriginal(v => !v)}>
+                        {showOriginal ? "Hide original" : "Show original"}
+                    </button>
+                    {" — "}
+                    <button type="button" className={cl("dismiss")} onClick={() => { setResult(undefined); setShowOriginal(false); }}>
+                        Dismiss
+                    </button>
+                </span>
+            </div>
+        </div>
     );
 }

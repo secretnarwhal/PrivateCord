@@ -21,11 +21,9 @@ import { Divider } from "@components/Divider";
 import { FormSwitch } from "@components/FormSwitch";
 import { Margins } from "@utils/margins";
 import { ModalCloseButton, ModalContent, ModalHeader, ModalProps, ModalRoot, openModal } from "@utils/modal";
-import { Forms, SearchableSelect, useEffect, useRef, UserStore, useState } from "@webpack/common";
+import { Forms, SearchableSelect } from "@webpack/common";
 
 import { settings } from "./settings";
-import { openUserKeyModal } from "./UserKeyModal";
-import { removeUserKey, useUserKeys } from "./userKeys";
 import { cl, DECODE_OPTIONS, ENCODE_OPTIONS } from "./utils";
 
 function EncodingSelect({
@@ -50,56 +48,6 @@ function EncodingSelect({
                 closeOnSelect={true}
                 onChange={v => (settings.store[settingsKey] = v)}
             />
-        </section>
-    );
-}
-
-function AesSecretInput() {
-    const aesSecret = settings.use(["aesSecret"]).aesSecret;
-    const [visible, setVisible] = useState(false);
-    // Uncontrolled defaultValue prevents React from setting the DOM `value` attribute — partial mitigation against other plugins reading via querySelector; full mitigation needs an isolated iframe.
-    const inputRef = useRef<HTMLInputElement>(null);
-
-    useEffect(() => {
-        if (inputRef.current && inputRef.current.value !== aesSecret) {
-            inputRef.current.value = aesSecret;
-        }
-    }, [aesSecret]);
-
-    return (
-        <section className={Margins.bottom16}>
-            <Forms.FormTitle tag="h3">Shared AES-256-GCM Secret Key</Forms.FormTitle>
-            <Forms.FormText className={Margins.bottom8}>
-                Both users must enter the <strong>exact same key</strong> to encrypt and decrypt each other's messages.
-                Encryption and decryption happen locally on your device.
-                Stored in plain text in your Vencord settings — if you have settings sync enabled, this key will be included in that sync.
-            </Forms.FormText>
-            <div className={cl("secret-row")}>
-                <input
-                    ref={inputRef}
-                    type={visible ? "text" : "password"}
-                    className={cl("secret-input")}
-                    defaultValue={aesSecret}
-                    placeholder="Enter shared secret…"
-                    autoComplete="off"
-                    spellCheck={false}
-                />
-                <button
-                    className={cl("secret-toggle")}
-                    onClick={() => { if (inputRef.current) settings.store.aesSecret = inputRef.current.value; }}
-                    type="button"
-                >
-                    Save
-                </button>
-                <button
-                    className={cl("secret-toggle")}
-                    onClick={() => setVisible(v => !v)}
-                    type="button"
-                    aria-label={visible ? "Hide secret" : "Show secret"}
-                >
-                    {visible ? "Hide" : "Show"}
-                </button>
-            </div>
         </section>
     );
 }
@@ -130,47 +78,6 @@ function AutoEncodeToggle() {
     );
 }
 
-function UserKeysSection() {
-    const userKeys = useUserKeys();
-    const entries = Object.entries(userKeys);
-
-    if (entries.length === 0) return null;
-
-    return (
-        <>
-            <Divider className={Margins.bottom16} />
-            <section className={Margins.bottom16}>
-                <Forms.FormTitle tag="h3">Per-User AES Keys</Forms.FormTitle>
-                <Forms.FormText className={Margins.bottom8}>
-                    These keys override the global secret for specific users. Right-click a user to add or update a key.
-                </Forms.FormText>
-                {entries.map(([userId]) => {
-                    const username = UserStore.getUser(userId)?.username ?? userId;
-                    return (
-                        <div key={userId} className={cl("user-key-row")}>
-                            <span className={cl("user-key-name")}>@{username}</span>
-                            <button
-                                className={cl("user-key-btn", "user-key-edit")}
-                                onClick={() => openUserKeyModal(userId, username)}
-                                type="button"
-                            >
-                                Edit
-                            </button>
-                            <button
-                                className={cl("user-key-btn", "user-key-clear")}
-                                onClick={() => removeUserKey(userId)}
-                                type="button"
-                            >
-                                Remove
-                            </button>
-                        </div>
-                    );
-                })}
-            </section>
-        </>
-    );
-}
-
 function BaseConverterModal({ rootProps }: { rootProps: ModalProps; }) {
     return (
         <ModalRoot {...rootProps}>
@@ -196,14 +103,8 @@ function BaseConverterModal({ rootProps }: { rootProps: ModalProps; }) {
 
                 <Divider className={Margins.bottom16} />
 
-                <AesSecretInput />
-
-                <Divider className={Margins.bottom16} />
-
                 <AutoDecodeToggle />
                 <AutoEncodeToggle />
-
-                <UserKeysSection />
             </ModalContent>
         </ModalRoot>
     );

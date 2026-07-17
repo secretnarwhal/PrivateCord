@@ -10,18 +10,29 @@
     margin: 0;
 }
 
+/* Flex row: converter icon in its own column, decoded text + meta stacked in the
+   second column. Giving the accessory its own block row keeps the message's
+   reaction row below the decoded text instead of overlapping it. */
 .vc-baseconv-accessory {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.375em;
+    margin-top: 0.25em;
     color: inherit;
-    font-style: normal;
-    font-weight: inherit;
     line-height: 1.375;
-    white-space: break-spaces;
 }
 
 .vc-baseconv-accessory-icon {
-    margin-right: 0.25em;
-    vertical-align: text-bottom;
+    flex: 0 0 auto;
+    /* Nudge the icon down so it lines up with the first line of text (cap height),
+       instead of sitting on the descender line. */
+    margin-top: 0.2em;
     opacity: 0.5;
+}
+
+.vc-baseconv-content {
+    flex: 1;
+    min-width: 0;
 }
 
 .vc-baseconv-decoded-text {
@@ -29,7 +40,8 @@
 }
 
 .vc-baseconv-meta {
-    display: inline;
+    display: block;
+    margin-top: 0.125em;
     color: var(--text-muted);
     font-size: 0.8125rem;
     font-style: italic;
@@ -67,120 +79,4 @@
 
 .vc-baseconv-chat-button {
     scale: 1.085;
-}
-
-/* AES secret row */
-.vc-baseconv-secret-row {
-    display: flex;
-    gap: 0.5em;
-    align-items: center;
-}
-
-.vc-baseconv-secret-input {
-    flex: 1;
-    padding: 0.5em 0.75em;
-    background: var(--input-background);
-    border: 1px solid var(--input-background);
-    border-radius: 3px;
-    color: var(--text-normal);
-    font-size: 1rem;
-    outline: none;
-    box-sizing: border-box;
-    font-family: var(--font-code);
-}
-
-.vc-baseconv-secret-input:focus {
-    border-color: var(--brand-experiment);
-}
-
-.vc-baseconv-secret-input::placeholder {
-    color: var(--text-muted);
-}
-
-.vc-baseconv-secret-toggle {
-    all: unset;
-    cursor: pointer;
-    padding: 0.5em 0.75em;
-    background: var(--button-secondary-background);
-    border-radius: 3px;
-    color: var(--text-normal);
-    font-size: 0.875rem;
-    white-space: nowrap;
-}
-
-.vc-baseconv-secret-toggle:hover {
-    background: var(--button-secondary-background-hover);
-}
-
-/* Per-user key modal actions */
-.vc-baseconv-user-key-actions {
-    display: flex;
-    gap: 0.5em;
-    flex-wrap: wrap;
-}
-
-.vc-baseconv-user-key-btn {
-    all: unset;
-    cursor: pointer;
-    padding: 0.45em 1em;
-    border-radius: 3px;
-    font-size: 0.875rem;
-    font-weight: 500;
-    white-space: nowrap;
-}
-
-.vc-baseconv-user-key-save {
-    background: var(--button-positive-background);
-    color: #fff;
-}
-
-.vc-baseconv-user-key-save:hover {
-    background: var(--button-positive-background-hover, var(--button-positive-background));
-}
-
-.vc-baseconv-user-key-save:disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
-}
-
-.vc-baseconv-user-key-clear {
-    background: var(--button-danger-background);
-    color: #fff;
-}
-
-.vc-baseconv-user-key-clear:hover {
-    background: var(--button-danger-background-hover, var(--button-danger-background));
-}
-
-.vc-baseconv-user-key-cancel {
-    background: var(--button-secondary-background);
-    color: var(--text-normal);
-}
-
-.vc-baseconv-user-key-cancel:hover {
-    background: var(--button-secondary-background-hover);
-}
-
-.vc-baseconv-user-key-edit {
-    background: var(--button-secondary-background);
-    color: var(--text-normal);
-}
-
-.vc-baseconv-user-key-edit:hover {
-    background: var(--button-secondary-background-hover);
-}
-
-/* Per-user key list rows in the main modal */
-.vc-baseconv-user-key-row {
-    display: flex;
-    align-items: center;
-    gap: 0.5em;
-    margin-bottom: 0.5em;
-}
-
-.vc-baseconv-user-key-name {
-    flex: 1;
-    font-family: var(--font-code);
-    font-size: 0.875rem;
-    color: var(--text-normal);
 }

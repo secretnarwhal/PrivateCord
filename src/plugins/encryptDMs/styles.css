@@ -1,83 +1,95 @@
+.vc-encryptdms-modal-content {
+    padding: 1em;
+}
+
+.vc-encryptdms-modal-header {
+    place-content: center space-between;
+}
+
+.vc-encryptdms-modal-title {
+    margin: 0;
+}
+
+/* Flex row: padlock icon in its own column, decrypted text + meta stacked in the
+   second column. Giving the accessory its own block row keeps the message's
+   reaction row below the decrypted text instead of overlapping it. */
 .vc-encryptdms-accessory {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.375em;
+    margin-top: 0.25em;
     color: inherit;
-    font-style: normal;
-    font-weight: inherit;
     line-height: 1.375;
-    white-space: break-spaces;
 }
 
 .vc-encryptdms-accessory-icon {
-    margin-right: 0.25em;
-    vertical-align: text-bottom;
+    flex: 0 0 auto;
+    /* Nudge the icon down so it lines up with the first line of text (cap height),
+       instead of sitting on the descender line. */
+    margin-top: 0.2em;
     opacity: 0.5;
 }
 
-.vc-encryptdms-decrypted-text {
+.vc-encryptdms-content {
+    flex: 1;
+    min-width: 0;
+}
+
+.vc-encryptdms-decoded-text {
     color: inherit;
 }
 
-.vc-encryptdms-fallback-text {
-    color: var(--text-muted);
-    font-style: italic;
-}
-
 .vc-encryptdms-meta {
-    display: inline;
+    display: block;
+    margin-top: 0.125em;
     color: var(--text-muted);
     font-size: 0.8125rem;
     font-style: italic;
 }
 
-.vc-encryptdms-label {
+.vc-encryptdms-encoding-label {
     color: var(--interactive-active);
     font-weight: 600;
     font-style: normal;
 }
 
-.vc-encryptdms-meta-btn {
+.vc-encryptdms-toggle-original {
     all: unset;
     cursor: pointer;
     color: var(--text-link);
 }
 
-.vc-encryptdms-meta-btn:is(:hover, :focus) {
+.vc-encryptdms-toggle-original:is(:hover, :focus) {
     text-decoration: underline;
 }
 
-.vc-encryptdms-key-share {
-    display: flex;
-    align-items: center;
-    gap: 0.5em;
-    flex-wrap: wrap;
-}
-
-.vc-encryptdms-accept-btn {
+.vc-encryptdms-dismiss {
     all: unset;
     cursor: pointer;
-    padding: 0.35em 0.9em;
-    border-radius: 3px;
-    background: var(--button-positive-background);
-    color: #fff;
-    font-size: 0.875rem;
-    font-weight: 500;
-    white-space: nowrap;
+    color: var(--text-link);
 }
 
-.vc-encryptdms-accept-btn:hover {
-    background: var(--button-positive-background-hover, var(--button-positive-background));
+.vc-encryptdms-dismiss:is(:hover, :focus) {
+    text-decoration: underline;
 }
 
-.vc-encryptdms-chat-button {
-    scale: 1.05;
-}
-
-.vc-encryptdms-enabled {
+.vc-encryptdms-auto-encode {
     color: var(--green-360);
 }
 
-/* Import key modal */
-.vc-encryptdms-input {
-    width: 100%;
+.vc-encryptdms-chat-button {
+    scale: 1.085;
+}
+
+/* AES secret row */
+.vc-encryptdms-secret-row {
+    display: flex;
+    gap: 0.5em;
+    align-items: center;
+}
+
+.vc-encryptdms-secret-input {
+    flex: 1;
     padding: 0.5em 0.75em;
     background: var(--input-background);
     border: 1px solid var(--input-background);
@@ -89,16 +101,265 @@
     font-family: var(--font-code);
 }
 
-.vc-encryptdms-input:focus {
+.vc-encryptdms-secret-input:focus {
     border-color: var(--brand-experiment);
 }
 
-.vc-encryptdms-input::placeholder {
+.vc-encryptdms-secret-input::placeholder {
     color: var(--text-muted);
 }
 
-.vc-encryptdms-key-input {
-    resize: vertical;
+.vc-encryptdms-secret-toggle {
+    all: unset;
+    cursor: pointer;
+    padding: 0.5em 0.75em;
+    background: var(--button-secondary-background);
+    border-radius: 3px;
+    color: var(--text-normal);
     font-size: 0.875rem;
+    white-space: nowrap;
 }
 
+.vc-encryptdms-secret-toggle:hover {
+    background: var(--button-secondary-background-hover);
+}
+
+/* Per-user key modal actions */
+.vc-encryptdms-user-key-actions {
+    display: flex;
+    gap: 0.5em;
+    flex-wrap: wrap;
+}
+
+.vc-encryptdms-user-key-btn {
+    all: unset;
+    cursor: pointer;
+    padding: 0.45em 1em;
+    border-radius: 3px;
+    font-size: 0.875rem;
+    font-weight: 500;
+    white-space: nowrap;
+}
+
+.vc-encryptdms-user-key-save {
+    background: var(--button-positive-background);
+    color: #fff;
+}
+
+.vc-encryptdms-user-key-save:hover {
+    background: var(--button-positive-background-hover, var(--button-positive-background));
+}
+
+.vc-encryptdms-user-key-save:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.vc-encryptdms-user-key-clear {
+    background: var(--button-danger-background);
+    color: #fff;
+}
+
+.vc-encryptdms-user-key-clear:hover {
+    background: var(--button-danger-background-hover, var(--button-danger-background));
+}
+
+.vc-encryptdms-user-key-cancel {
+    background: var(--button-secondary-background);
+    color: var(--text-normal);
+}
+
+.vc-encryptdms-user-key-cancel:hover {
+    background: var(--button-secondary-background-hover);
+}
+
+.vc-encryptdms-user-key-edit {
+    background: var(--button-secondary-background);
+    color: var(--text-normal);
+}
+
+.vc-encryptdms-user-key-edit:hover {
+    background: var(--button-secondary-background-hover);
+}
+
+/* Per-user key list rows in the main modal */
+.vc-encryptdms-user-key-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5em;
+    margin-bottom: 0.5em;
+}
+
+.vc-encryptdms-user-key-name {
+    flex: 1;
+    font-family: var(--font-code);
+    font-size: 0.875rem;
+    color: var(--text-normal);
+}
+
+/* Decrypted attachments (EncryptedAttachments.tsx) */
+.vc-encryptdms-encrypted-attachments {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5em;
+    margin-top: 0.25em;
+}
+
+.vc-encryptdms-attachment-image {
+    max-width: min(100%, 400px);
+    max-height: 300px;
+    border-radius: 4px;
+    object-fit: contain;
+}
+
+.vc-encryptdms-attachment-video {
+    max-width: min(100%, 400px);
+    max-height: 300px;
+    border-radius: 4px;
+}
+
+.vc-encryptdms-attachment-audio {
+    max-width: min(100%, 400px);
+}
+
+.vc-encryptdms-attachment-download {
+    all: unset;
+    cursor: pointer;
+    padding: 0.5em 0.75em;
+    background: var(--button-secondary-background);
+    border-radius: 3px;
+    color: var(--text-normal);
+    font-size: 0.875rem;
+    width: fit-content;
+}
+
+.vc-encryptdms-attachment-download:hover {
+    background: var(--button-secondary-background-hover);
+    text-decoration: underline;
+}
+
+.vc-encryptdms-attachment-error {
+    color: var(--text-danger);
+    font-size: 0.8125rem;
+    font-style: italic;
+}
+
+.vc-encryptdms-attachment-loading {
+    color: var(--text-muted);
+    font-size: 0.8125rem;
+    font-style: italic;
+}
+
+/* ─── Click-to-load link previews ──────────────────────────────────────────── */
+
+.vc-encryptdms-previews {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35em;
+    margin-top: 0.35em;
+}
+
+.vc-encryptdms-load-preview {
+    all: unset;
+    box-sizing: border-box;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35em;
+    width: fit-content;
+    padding: 0.3em 0.7em;
+    border-radius: 4px;
+    background: var(--button-secondary-background);
+    color: var(--text-normal);
+    font-size: 0.8125rem;
+}
+
+.vc-encryptdms-load-preview:is(:hover, :focus-visible) {
+    background: var(--button-secondary-background-hover);
+}
+
+.vc-encryptdms-preview-loading {
+    color: var(--text-muted);
+    font-size: 0.8125rem;
+    font-style: italic;
+}
+
+.vc-encryptdms-preview-error {
+    color: var(--text-muted);
+    font-size: 0.8125rem;
+    font-style: italic;
+}
+
+.vc-encryptdms-preview-retry {
+    all: unset;
+    cursor: pointer;
+    color: var(--text-link);
+}
+
+.vc-encryptdms-preview-retry:is(:hover, :focus-visible) {
+    text-decoration: underline;
+}
+
+.vc-encryptdms-preview-card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5em;
+    max-width: 432px;
+    padding: 0.6em 0.75em;
+    border-radius: 4px;
+    background: var(--background-secondary);
+    border-left: 4px solid var(--background-tertiary);
+}
+
+/* Text + side thumbnail row; gifv-style video renders full-width below it */
+.vc-encryptdms-preview-card-main {
+    display: flex;
+    gap: 0.75em;
+}
+
+.vc-encryptdms-preview-body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15em;
+    min-width: 0;
+    flex: 1;
+}
+
+.vc-encryptdms-preview-site {
+    color: var(--text-muted);
+    font-size: 0.75rem;
+}
+
+.vc-encryptdms-preview-title {
+    color: var(--text-link);
+    font-weight: 600;
+    font-size: 0.9375rem;
+}
+
+.vc-encryptdms-preview-title:hover {
+    text-decoration: underline;
+}
+
+.vc-encryptdms-preview-desc {
+    color: var(--text-normal);
+    font-size: 0.8125rem;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.vc-encryptdms-preview-thumb-link {
+    flex: 0 0 auto;
+}
+
+.vc-encryptdms-preview-thumb {
+    max-width: 80px;
+    max-height: 80px;
+    border-radius: 4px;
+    object-fit: cover;
+}
+
+.vc-encryptdms-preview-media {
+    max-width: 400px;
+    max-height: 300px;
+    border-radius: 4px;
+}

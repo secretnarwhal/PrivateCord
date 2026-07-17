@@ -56,7 +56,7 @@ function UserKeyModal({ rootProps, userId, username }: { rootProps: ModalProps; 
                 <section className={Margins.bottom16}>
                     <Forms.FormTitle tag="h3">Per-User AES-256-GCM Secret Key</Forms.FormTitle>
                     <Forms.FormText className={Margins.bottom8}>
-                        This key overrides the global secret when sending to or auto-decoding messages from <strong>@{username}</strong>.
+                        This key overrides the global secret when sending to or auto-decrypting messages from <strong>@{username}</strong>.
                         Both users must enter the exact same key. Stored in plain text in your local Vencord settings.
                     </Forms.FormText>
                     <div className={cl("secret-row")}>

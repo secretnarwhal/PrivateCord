@@ -1,0 +1,822 @@
+/* ========== GifVault ========== */
+
+.vc-gifvault-explorer,
+.vc-gifvault-popout,
+.vc-gifvault-toolbar {
+    --vc-gv-accent: var(--brand-500, var(--brand-experiment, #5865f2));
+    --vc-gv-bg-1: var(--background-primary, #313338);
+    --vc-gv-bg-2: var(--background-secondary, #2b2d31);
+    --vc-gv-bg-3: var(--background-tertiary, #1e1f22);
+    --vc-gv-border: var(--background-modifier-accent, hsla(0, 0%, 100%, 0.08));
+    --vc-gv-hover: var(--background-modifier-hover, hsla(0, 0%, 100%, 0.06));
+    --vc-gv-text: var(--text-normal, #dbdee1);
+    --vc-gv-muted: var(--text-muted, #949ba4);
+    --vc-gv-header: var(--header-primary, #f2f3f5);
+}
+
+/* ---------- keyframes ---------- */
+
+@keyframes vc-gv-pop {
+    from {
+        opacity: 0;
+        transform: scale(0.92) translateY(6px);
+    }
+}
+
+@keyframes vc-gv-float {
+    from {
+        transform: translateY(-3px);
+    }
+
+    to {
+        transform: translateY(3px);
+    }
+}
+
+@keyframes vc-gv-shimmer {
+    from {
+        background-position: -200% 0;
+    }
+
+    to {
+        background-position: 200% 0;
+    }
+}
+
+/* ---------- explorer shell ---------- */
+
+.vc-gifvault-explorer {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+    color: var(--vc-gv-text);
+}
+
+.vc-gifvault-picker-root {
+    /* fill whatever height the picker's content area gives us */
+    height: 100%;
+}
+
+/* ---------- toolbar ---------- */
+
+.vc-gifvault-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    min-width: 0;
+}
+
+.vc-gifvault-toolbar-popout {
+    padding: 10px 12px 0;
+}
+
+.vc-gifvault-search {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex: 1;
+    min-width: 0;
+    height: 32px;
+    padding: 0 10px;
+    border-radius: 9px;
+    background: var(--vc-gv-bg-3);
+    border: 1px solid var(--vc-gv-border);
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.vc-gifvault-search:focus-within {
+    border-color: var(--vc-gv-accent);
+    box-shadow: 0 0 0 3px color-mix(in oklab, var(--vc-gv-accent) 22%, transparent);
+}
+
+.vc-gifvault-search-icon {
+    flex-shrink: 0;
+    color: var(--vc-gv-muted);
+}
+
+.vc-gifvault-search-input {
+    flex: 1;
+    min-width: 0;
+    background: transparent;
+    border: none;
+    outline: none;
+    color: var(--vc-gv-text);
+    font-size: 13px;
+    font-family: inherit;
+}
+
+.vc-gifvault-search-input::placeholder {
+    color: var(--vc-gv-muted);
+}
+
+.vc-gifvault-search-clear {
+    display: grid;
+    place-items: center;
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background: var(--vc-gv-hover);
+    color: var(--vc-gv-muted);
+    cursor: pointer;
+    transition: color 0.12s ease, background 0.12s ease;
+}
+
+.vc-gifvault-search-clear:hover {
+    background: var(--vc-gv-accent);
+    color: #fff;
+}
+
+.vc-gifvault-icon-btn {
+    display: grid;
+    place-items: center;
+    flex-shrink: 0;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border: 1px solid var(--vc-gv-border);
+    border-radius: 9px;
+    background: var(--vc-gv-bg-3);
+    color: var(--vc-gv-muted);
+    cursor: pointer;
+    transition: color 0.12s ease, background 0.12s ease, border-color 0.12s ease, transform 0.1s ease;
+}
+
+.vc-gifvault-icon-btn:hover:not(:disabled) {
+    color: var(--vc-gv-header);
+    background: var(--vc-gv-hover);
+    border-color: color-mix(in oklab, var(--vc-gv-accent) 55%, transparent);
+}
+
+.vc-gifvault-icon-btn:active:not(:disabled) {
+    transform: scale(0.93);
+}
+
+.vc-gifvault-icon-btn:disabled {
+    opacity: 0.35;
+    cursor: default;
+}
+
+/* ---------- breadcrumbs ---------- */
+
+.vc-gifvault-crumbs {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 12px 6px;
+}
+
+.vc-gifvault-toolbar-popout + .vc-gifvault-crumbs,
+.vc-gifvault-explorer-popout .vc-gifvault-crumbs {
+    padding: 8px 12px 6px;
+}
+
+.vc-gifvault-up-btn {
+    display: grid;
+    place-items: center;
+    flex-shrink: 0;
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    border: none;
+    border-radius: 7px;
+    background: transparent;
+    color: var(--vc-gv-muted);
+    cursor: pointer;
+    transition: color 0.12s ease, background 0.12s ease;
+}
+
+.vc-gifvault-up-btn:hover:not(:disabled) {
+    background: var(--vc-gv-hover);
+    color: var(--vc-gv-header);
+}
+
+.vc-gifvault-up-btn:disabled {
+    opacity: 0.3;
+    cursor: default;
+}
+
+.vc-gifvault-crumb-list {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    min-width: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+}
+
+.vc-gifvault-crumb-list::-webkit-scrollbar {
+    display: none;
+}
+
+.vc-gifvault-crumb {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    flex-shrink: 0;
+    max-width: 160px;
+    padding: 4px 9px;
+    border: none;
+    border-radius: 7px;
+    background: transparent;
+    color: var(--vc-gv-muted);
+    font-size: 12.5px;
+    font-family: inherit;
+    cursor: pointer;
+    transition: color 0.12s ease, background 0.12s ease;
+}
+
+.vc-gifvault-crumb:hover {
+    background: var(--vc-gv-hover);
+    color: var(--vc-gv-text);
+}
+
+.vc-gifvault-crumb-active {
+    background: var(--vc-gv-hover);
+    color: var(--vc-gv-header);
+    font-weight: 600;
+}
+
+.vc-gifvault-crumb-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.vc-gifvault-crumb-sep {
+    flex-shrink: 0;
+    color: var(--vc-gv-muted);
+    opacity: 0.5;
+}
+
+/* ---------- scroller ---------- */
+
+.vc-gifvault-scroller {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden auto;
+    padding: 2px 12px 12px;
+    border-radius: 4px;
+}
+
+.vc-gifvault-scroller::-webkit-scrollbar {
+    width: 8px;
+}
+
+.vc-gifvault-scroller::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.vc-gifvault-scroller::-webkit-scrollbar-thumb {
+    background: var(--vc-gv-border);
+    border-radius: 4px;
+}
+
+.vc-gifvault-scroller::-webkit-scrollbar-thumb:hover {
+    background: color-mix(in oklab, var(--vc-gv-muted) 45%, transparent);
+}
+
+.vc-gifvault-section-label {
+    margin: 10px 2px 8px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--vc-gv-muted);
+    user-select: none;
+}
+
+/* ---------- folder tiles ---------- */
+
+.vc-gifvault-folder-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+    gap: 8px;
+}
+
+.vc-gifvault-folder-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 7px;
+    padding: 12px 8px 9px;
+    border: 1px solid transparent;
+    border-radius: 12px;
+    cursor: pointer;
+    user-select: none;
+    animation: vc-gv-pop 0.35s cubic-bezier(0.2, 0.9, 0.3, 1.2) backwards;
+    animation-delay: var(--vc-gv-delay, 0ms);
+    transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+}
+
+.vc-gifvault-folder-card:hover {
+    background: var(--vc-gv-hover);
+    transform: translateY(-2px);
+}
+
+.vc-gifvault-folder-card:hover .vc-gifvault-folder-glyph {
+    transform: scale(1.05) rotate(-1.5deg);
+}
+
+.vc-gifvault-folder-glyph {
+    position: relative;
+    width: 58px;
+    height: 46px;
+    filter: drop-shadow(0 5px 10px rgb(0 0 0 / 28%));
+    transition: transform 0.18s cubic-bezier(0.2, 0.9, 0.3, 1.4);
+}
+
+/* folder tab */
+.vc-gifvault-folder-glyph::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 26px;
+    height: 13px;
+    border-radius: 5px 9px 0 0;
+    background: color-mix(in oklab, var(--vc-gv-folder-c, var(--vc-gv-accent)) 75%, #000);
+}
+
+/* folder body */
+.vc-gifvault-folder-glyph::after {
+    content: "";
+    position: absolute;
+    inset: 6px 0 0;
+    border-radius: 7px;
+    background: linear-gradient(
+        160deg,
+        color-mix(in oklab, var(--vc-gv-folder-c, var(--vc-gv-accent)) 82%, #fff) 0%,
+        var(--vc-gv-folder-c, var(--vc-gv-accent)) 45%,
+        color-mix(in oklab, var(--vc-gv-folder-c, var(--vc-gv-accent)) 70%, #000) 100%
+    );
+    box-shadow:
+        inset 0 1px 0 rgb(255 255 255 / 35%),
+        inset 0 -10px 18px rgb(0 0 0 / 20%);
+}
+
+.vc-gifvault-folder-count {
+    position: absolute;
+    right: -6px;
+    bottom: -5px;
+    z-index: 1;
+    min-width: 17px;
+    padding: 1px 5px;
+    border-radius: 999px;
+    background: var(--vc-gv-bg-3);
+    border: 1px solid var(--vc-gv-border);
+    color: var(--vc-gv-text);
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 15px;
+    text-align: center;
+    box-shadow: 0 2px 6px rgb(0 0 0 / 30%);
+}
+
+.vc-gifvault-folder-name {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    max-width: 100%;
+    font-size: 12px;
+    line-height: 1.25;
+    text-align: center;
+    color: var(--vc-gv-text);
+    word-break: break-word;
+}
+
+.vc-gifvault-folder-rename {
+    width: 100%;
+    padding: 3px 5px;
+    border: 1px solid var(--vc-gv-accent);
+    border-radius: 5px;
+    outline: none;
+    background: var(--vc-gv-bg-3);
+    color: var(--vc-gv-text);
+    font-size: 12px;
+    font-family: inherit;
+    text-align: center;
+    box-shadow: 0 0 0 3px color-mix(in oklab, var(--vc-gv-accent) 20%, transparent);
+}
+
+/* ---------- gif tiles ---------- */
+
+.vc-gifvault-gif-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(var(--vc-gifvault-tile, 140px), 100%), 1fr));
+    gap: 10px;
+}
+
+.vc-gifvault-gif-tile {
+    position: relative;
+    aspect-ratio: 1;
+    overflow: hidden;
+    border-radius: 12px;
+    background: var(--vc-gv-bg-3);
+    cursor: pointer;
+    user-select: none;
+    animation: vc-gv-pop 0.35s cubic-bezier(0.2, 0.9, 0.3, 1.2) backwards;
+    animation-delay: var(--vc-gv-delay, 0ms);
+    transition: transform 0.16s ease, box-shadow 0.16s ease;
+}
+
+.vc-gifvault-gif-tile:hover {
+    z-index: 1;
+    transform: translateY(-2px) scale(1.02);
+    box-shadow:
+        0 10px 24px rgb(0 0 0 / 45%),
+        0 0 0 2px color-mix(in oklab, var(--vc-gv-accent) 65%, transparent);
+}
+
+.vc-gifvault-tile-dragging {
+    opacity: 0.35;
+    transform: scale(0.95);
+}
+
+.vc-gifvault-media {
+    position: absolute;
+    inset: 0;
+}
+
+.vc-gifvault-media-el {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    pointer-events: none;
+}
+
+.vc-gifvault-media-placeholder {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(110deg, var(--vc-gv-bg-3) 8%, var(--vc-gv-bg-1) 18%, var(--vc-gv-bg-3) 33%);
+    background-size: 200% 100%;
+    animation: vc-gv-shimmer 1.4s linear infinite;
+}
+
+.vc-gifvault-tile-overlay {
+    position: absolute;
+    inset: auto 0 0;
+    padding: 24px 8px 7px;
+    background: linear-gradient(transparent, rgb(0 0 0 / 78%));
+    opacity: 0;
+    transition: opacity 0.16s ease;
+    pointer-events: none;
+}
+
+.vc-gifvault-gif-tile:hover .vc-gifvault-tile-overlay {
+    opacity: 1;
+}
+
+.vc-gifvault-tile-name {
+    overflow: hidden;
+    font-size: 12px;
+    font-weight: 600;
+    color: #fff;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    text-shadow: 0 1px 3px rgb(0 0 0 / 60%);
+}
+
+.vc-gifvault-tile-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 4px;
+    pointer-events: auto;
+}
+
+.vc-gifvault-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    max-width: 100%;
+    padding: 2px 7px;
+    border: none;
+    border-radius: 999px;
+    background: rgb(255 255 255 / 16%);
+    backdrop-filter: blur(6px);
+    color: rgb(255 255 255 / 92%);
+    font-size: 10px;
+    font-weight: 600;
+    font-family: inherit;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.vc-gifvault-chip-folder {
+    cursor: pointer;
+    transition: background 0.12s ease;
+}
+
+.vc-gifvault-chip-folder:hover {
+    background: rgb(255 255 255 / 30%);
+}
+
+.vc-gifvault-tile-actions {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    display: flex;
+    gap: 4px;
+    opacity: 0;
+    transform: translateY(-4px);
+    transition: opacity 0.16s ease, transform 0.16s ease;
+}
+
+.vc-gifvault-gif-tile:hover .vc-gifvault-tile-actions {
+    opacity: 1;
+    transform: none;
+}
+
+.vc-gifvault-qa-btn {
+    display: grid;
+    place-items: center;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border: none;
+    border-radius: 7px;
+    background: rgb(0 0 0 / 55%);
+    backdrop-filter: blur(6px);
+    color: rgb(255 255 255 / 90%);
+    cursor: pointer;
+    transition: background 0.12s ease, transform 0.1s ease;
+}
+
+.vc-gifvault-qa-btn:hover {
+    background: var(--vc-gv-accent);
+    color: #fff;
+}
+
+.vc-gifvault-qa-btn:active {
+    transform: scale(0.9);
+}
+
+.vc-gifvault-qa-danger:hover {
+    background: var(--status-danger, #f23f43);
+}
+
+/* ---------- drag & drop ---------- */
+
+.vc-gifvault-drop-ok {
+    background: color-mix(in oklab, var(--vc-gv-accent) 16%, transparent) !important;
+    outline: 2px dashed color-mix(in oklab, var(--vc-gv-accent) 80%, #fff);
+    outline-offset: -2px;
+}
+
+.vc-gifvault-folder-card.vc-gifvault-drop-ok {
+    transform: scale(1.06);
+}
+
+.vc-gifvault-folder-card.vc-gifvault-drop-ok .vc-gifvault-folder-glyph {
+    transform: scale(1.1) rotate(-3deg);
+}
+
+/* ---------- empty states ---------- */
+
+.vc-gifvault-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 44px 20px;
+    text-align: center;
+    user-select: none;
+}
+
+.vc-gifvault-empty-icon {
+    margin-bottom: 6px;
+    color: var(--vc-gv-muted);
+    opacity: 0.65;
+    animation: vc-gv-float 2.6s ease-in-out infinite alternate;
+}
+
+.vc-gifvault-empty-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--vc-gv-header);
+}
+
+.vc-gifvault-empty-hint {
+    max-width: 300px;
+    font-size: 12px;
+    line-height: 1.45;
+    color: var(--vc-gv-muted);
+}
+
+/* ---------- status bar ---------- */
+
+.vc-gifvault-statusbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    flex-shrink: 0;
+    padding: 5px 12px;
+    border-top: 1px solid var(--vc-gv-border);
+    font-size: 11px;
+    color: var(--vc-gv-muted);
+    user-select: none;
+}
+
+.vc-gifvault-statusbar-info {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.vc-gifvault-statusbar-sort {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+    padding: 2px 6px;
+    border: none;
+    border-radius: 5px;
+    background: transparent;
+    color: var(--vc-gv-muted);
+    font-size: 11px;
+    font-family: inherit;
+    cursor: pointer;
+    transition: color 0.12s ease, background 0.12s ease;
+}
+
+.vc-gifvault-statusbar-sort:hover {
+    background: var(--vc-gv-hover);
+    color: var(--vc-gv-text);
+}
+
+/* ---------- popout window ---------- */
+
+.vc-gifvault-popout {
+    position: fixed;
+    z-index: 1000;
+    display: flex;
+    flex-direction: column;
+    min-width: 360px;
+    min-height: 320px;
+    max-width: 96vw;
+    max-height: 94vh;
+    border: 1px solid var(--vc-gv-border);
+    border-radius: 14px;
+    background: color-mix(in oklab, var(--vc-gv-bg-2) 94%, transparent);
+    backdrop-filter: blur(16px) saturate(1.3);
+    box-shadow:
+        0 16px 60px rgb(0 0 0 / 55%),
+        0 0 0 1px rgb(0 0 0 / 20%);
+    resize: both;
+    overflow: hidden;
+    animation: vc-gv-pop 0.25s cubic-bezier(0.2, 0.9, 0.3, 1.2);
+}
+
+/* resize affordance in the corner */
+.vc-gifvault-popout::after {
+    content: "";
+    position: absolute;
+    right: 4px;
+    bottom: 4px;
+    width: 11px;
+    height: 11px;
+    background: repeating-linear-gradient(
+        135deg,
+        transparent 0 2.5px,
+        var(--vc-gv-muted) 2.5px 4px
+    );
+    clip-path: polygon(100% 0, 100% 100%, 0 100%);
+    opacity: 0.55;
+    pointer-events: none;
+}
+
+.vc-gifvault-popout-titlebar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+    padding: 9px 10px 9px 12px;
+    border-bottom: 1px solid var(--vc-gv-border);
+    background: linear-gradient(
+        color-mix(in oklab, var(--vc-gv-accent) 9%, transparent),
+        transparent
+    );
+    cursor: grab;
+    user-select: none;
+}
+
+.vc-gifvault-popout-titlebar:active {
+    cursor: grabbing;
+}
+
+.vc-gifvault-popout-badge {
+    display: grid;
+    place-items: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 7px;
+    background: linear-gradient(140deg, color-mix(in oklab, var(--vc-gv-accent) 80%, #fff), var(--vc-gv-accent));
+    color: #fff;
+    box-shadow: 0 2px 8px color-mix(in oklab, var(--vc-gv-accent) 50%, transparent);
+}
+
+.vc-gifvault-popout-title {
+    font-size: 13.5px;
+    font-weight: 700;
+    color: var(--vc-gv-header);
+}
+
+.vc-gifvault-popout-subtitle {
+    overflow: hidden;
+    font-size: 11px;
+    color: var(--vc-gv-muted);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.vc-gifvault-popout-spacer {
+    flex: 1;
+}
+
+.vc-gifvault-popout .vc-gifvault-icon-btn {
+    width: 26px;
+    height: 26px;
+    border: none;
+    background: transparent;
+}
+
+.vc-gifvault-popout .vc-gifvault-toolbar .vc-gifvault-icon-btn {
+    width: 32px;
+    height: 32px;
+    border: 1px solid var(--vc-gv-border);
+    background: var(--vc-gv-bg-3);
+}
+
+.vc-gifvault-explorer-popout {
+    flex: 1;
+    min-height: 0;
+}
+
+/* ---------- edit modal ---------- */
+
+.vc-gifvault-modal-preview {
+    display: flex;
+    justify-content: center;
+    margin: 4px 0 14px;
+    border-radius: 10px;
+    overflow: hidden;
+    background: var(--background-tertiary, #1e1f22);
+}
+
+.vc-gifvault-modal-preview video,
+.vc-gifvault-modal-preview img {
+    max-width: 100%;
+    max-height: 220px;
+    object-fit: contain;
+}
+
+.vc-gifvault-modal-tags-title {
+    margin-top: 14px;
+}
+
+.vc-gifvault-modal-hint {
+    margin: 6px 0 10px;
+}
+
+.vc-gifvault-modal-footer {
+    display: flex;
+    flex-direction: row-reverse;
+    gap: 10px;
+}
+
+/* ---------- context menu bits ---------- */
+
+.vc-gifvault-color-dot {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    box-shadow: inset 0 0 0 1px rgb(255 255 255 / 25%);
+}
+
+/* ---------- motion sensitivity ---------- */
+
+@media (prefers-reduced-motion: reduce) {
+    .vc-gifvault-gif-tile,
+    .vc-gifvault-folder-card,
+    .vc-gifvault-popout {
+        animation: none;
+    }
+
+    .vc-gifvault-empty-icon {
+        animation: none;
+    }
+
+    .vc-gifvault-gif-tile:hover,
+    .vc-gifvault-folder-card:hover {
+        transform: none;
+    }
+}
