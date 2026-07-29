@@ -1,0 +1,268 @@
+/* Offscreen parking spot for the shared media element. Deliberately not
+   display:none — that would tear down the video decoder on every dock toggle. */
+.vc-lm-media-host {
+    position: fixed;
+    inset-block-end: 0;
+    inset-inline-start: 0;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.vc-lm-media-host video {
+    width: 1px;
+    height: 1px;
+}
+
+.vc-lm-player {
+    background: var(--background-base-low);
+    border-bottom: 1px solid var(--border-subtle);
+    border-start-start-radius: 10px;
+    border-start-end-radius: 10px;
+    overflow: hidden;
+}
+
+.vc-lm-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    min-width: 0;
+}
+
+.vc-lm-art {
+    width: 32px;
+    height: 32px;
+    border-radius: var(--radius-xs);
+    object-fit: cover;
+    flex: 0 0 auto;
+    background: var(--background-mod-subtle);
+}
+
+.vc-lm-art-placeholder {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-muted);
+}
+
+.vc-lm-info {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    min-width: 0;
+    flex: 1 1 auto;
+}
+
+.vc-lm-title,
+.vc-lm-artist {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.vc-lm-title {
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 16px;
+    color: var(--text-default);
+}
+
+.vc-lm-artist {
+    font-size: 11px;
+    line-height: 14px;
+    color: var(--text-muted);
+}
+
+.vc-lm-controls {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    flex: 0 0 auto;
+}
+
+.vc-lm-button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    border: none;
+    border-radius: var(--radius-sm);
+    background: none;
+    color: var(--interactive-icon-default);
+    cursor: pointer;
+}
+
+.vc-lm-button:hover {
+    color: var(--interactive-icon-hover);
+    background-color: var(--background-mod-strong);
+}
+
+.vc-lm-progress {
+    height: 3px;
+    background: var(--background-mod-subtle);
+    cursor: pointer;
+}
+
+.vc-lm-progress:hover {
+    height: 5px;
+}
+
+.vc-lm-progress-fill {
+    height: 100%;
+    background: var(--brand-500);
+    transition: width 0.1s linear;
+}
+
+.vc-lm-error {
+    padding: 4px 8px;
+    font-size: 11px;
+    color: var(--text-danger);
+    cursor: pointer;
+}
+
+/* Video docks into the sidebar space directly above the mini player */
+.vc-lm-video {
+    width: 100%;
+    background: black;
+    display: flex;
+}
+
+.vc-lm-video video.vc-lm-video-visible {
+    width: 100%;
+    height: auto;
+    max-height: 240px;
+    display: block;
+    object-fit: contain;
+}
+
+/* Hides Discord's "Go Live / Not Sharing" game tile so the player takes its slot.
+   Discord's minified class names keep a readable prefix before the hash, which is
+   what these substring selectors rely on. */
+.vc-lm-hide-golive [class*="gameActivityPanel_"],
+.vc-lm-hide-golive [class*="goLiveButton_"],
+.vc-lm-hide-golive [class*="goLivePanel_"] {
+    display: none !important;
+}
+
+/* Library modal */
+.vc-lm-modal .vc-lm-list {
+    display: flex;
+    flex-direction: column;
+    max-height: 320px;
+    overflow-y: auto;
+    margin-block-start: 8px;
+}
+
+.vc-lm-now-playing {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    margin-block-end: 12px;
+}
+
+.vc-lm-now-playing-art {
+    width: 64px;
+    height: 64px;
+    border-radius: var(--radius-sm);
+    object-fit: cover;
+    background: var(--background-mod-subtle);
+    flex: 0 0 auto;
+}
+
+.vc-lm-now-playing-text {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.vc-lm-folder-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-block-end: 8px;
+}
+
+.vc-lm-folder-path {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    direction: rtl;
+    text-align: left;
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+.vc-lm-toggles {
+    margin-block-end: 8px;
+}
+
+.vc-lm-inline-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-block-end: 8px;
+}
+
+.vc-lm-volume {
+    flex: 1 1 auto;
+    min-width: 80px;
+    accent-color: var(--brand-500);
+}
+
+.vc-lm-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+}
+
+.vc-lm-row:hover {
+    background: var(--background-mod-subtle);
+}
+
+.vc-lm-row-active {
+    background: var(--background-mod-normal);
+}
+
+.vc-lm-row-text {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    flex: 1 1 auto;
+}
+
+.vc-lm-row-title {
+    font-size: 13px;
+    color: var(--text-default);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.vc-lm-row-subtitle {
+    font-size: 11px;
+    color: var(--text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.vc-lm-row-badge {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    padding: 2px 4px;
+    border-radius: var(--radius-xs);
+    background: var(--background-mod-strong);
+    color: var(--text-muted);
+    flex: 0 0 auto;
+}
