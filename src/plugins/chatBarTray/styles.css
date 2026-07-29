@@ -1,0 +1,170 @@
+.vc-cbt-row,
+.vc-cbt-panel {
+    --vc-cbt-bg: var(--background-floating, var(--background-secondary, #2b2d31));
+    --vc-cbt-border: var(--background-modifier-accent, hsl(0deg 0% 100% / 8%));
+    --vc-cbt-accent: var(--brand-500, var(--brand-experiment, #5865f2));
+    --vc-cbt-muted: var(--text-muted, #949ba4);
+}
+
+/* the row lights up while a button would land back on it, so "out of the tray" is aimable */
+.vc-cbt-row-drop {
+    outline: 1px dashed var(--vc-cbt-accent);
+    outline-offset: 2px;
+    border-radius: 4px;
+}
+
+/* ---------- buttons in the row & in the tray ---------- */
+
+.vc-cbt-item {
+    display: flex;
+    position: relative;
+    align-items: center;
+    border-radius: 4px;
+}
+
+/* the tray being open doubles as "you can rearrange things now" */
+.vc-cbt-editable {
+    cursor: grab;
+    outline: 1px dashed var(--vc-cbt-border);
+    outline-offset: 1px;
+
+    /* on touch, a press has to be ours to interpret or the scroller eats the move events */
+    touch-action: none;
+}
+
+.vc-cbt-dragging {
+    opacity: 0.4;
+}
+
+/* the button that follows the pointer; a clone, so it must never be hit-testable */
+.vc-cbt-preview {
+    position: fixed;
+    z-index: 10000;
+    top: 0;
+    left: 0;
+    justify-content: center;
+    box-sizing: border-box;
+    padding: 2px;
+    border-radius: 6px;
+    background: var(--vc-cbt-bg);
+    box-shadow: var(--shadow-high, 0 8px 16px rgb(0 0 0 / 24%));
+    opacity: 0.9;
+    outline: 1px solid var(--vc-cbt-accent);
+    pointer-events: none;
+}
+
+/* keep the grab cursor while the pointer is over Discord's own elements mid-drag */
+.vc-cbt-body-dragging,
+.vc-cbt-body-dragging * {
+    cursor: grabbing !important;
+}
+
+.vc-cbt-body-dragging {
+    user-select: none !important;
+}
+
+.vc-cbt-drop-before::before,
+.vc-cbt-drop-after::after {
+    content: "";
+    position: absolute;
+    top: 2px;
+    bottom: 2px;
+    width: 2px;
+    border-radius: 1px;
+    background: var(--vc-cbt-accent);
+}
+
+.vc-cbt-drop-before::before {
+    inset-inline-start: -3px;
+}
+
+.vc-cbt-drop-after::after {
+    inset-inline-end: -3px;
+}
+
+/* ---------- the caret ---------- */
+
+.vc-cbt-caret-target {
+    outline: 2px solid var(--vc-cbt-accent);
+    outline-offset: 1px;
+}
+
+.vc-cbt-caret-icon {
+    transition: transform 0.15s ease;
+}
+
+.vc-cbt-caret-icon-open {
+    transform: rotate(180deg);
+}
+
+/* ---------- the tray panel ---------- */
+
+.vc-cbt-panel {
+    position: fixed;
+    z-index: 1002;
+    top: 0;
+    left: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-width: 96vw;
+    padding: 8px;
+    border: 1px solid var(--vc-cbt-border);
+    border-radius: 8px;
+    background: var(--vc-cbt-bg);
+    box-shadow: var(--shadow-high, 0 8px 16px rgb(0 0 0 / 24%));
+
+    /* kept mounted while closed so trayed buttons never unmount — moving a button into the
+       tray must not change whether the plugin owning it is running */
+    visibility: hidden;
+    opacity: 0;
+    transform: translateY(4px);
+    pointer-events: none;
+    transition: opacity 0.1s ease, transform 0.1s ease;
+}
+
+.vc-cbt-panel-open {
+    visibility: visible;
+    opacity: 1;
+    transform: none;
+    pointer-events: auto;
+}
+
+.vc-cbt-panel-drop {
+    border-color: var(--vc-cbt-accent);
+}
+
+.vc-cbt-panel-grid {
+    display: grid;
+    grid-template-columns: repeat(var(--vc-cbt-columns, 6), 32px);
+    gap: 4px;
+    justify-items: center;
+}
+
+.vc-cbt-panel-grid > .vc-cbt-item {
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+}
+
+.vc-cbt-panel-empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 200px;
+    min-height: 44px;
+    padding: 0 8px;
+    border: 1px dashed var(--vc-cbt-border);
+    border-radius: 6px;
+    color: var(--vc-cbt-muted);
+    font-size: 12px;
+    text-align: center;
+}
+
+.vc-cbt-panel-hint {
+    color: var(--vc-cbt-muted);
+    font-size: 10px;
+    text-align: center;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+}
