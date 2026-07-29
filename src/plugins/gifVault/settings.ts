@@ -53,5 +53,11 @@ export const settings = definePluginSettings({
             { label: "Name (Z–A)", value: "name-za" },
             { label: "Shuffled", value: "shuffle" }
         ]
+    },
+    syncedVaultData: {
+        type: OptionType.STRING,
+        description: "Internal synced data for GifVault (do not edit)",
+        default: "",
+        hidden: true
     }
 });

@@ -78,10 +78,13 @@ function emit() {
 
 function persist() {
     clearTimeout(saveTimer);
-    saveTimer = setTimeout(
-        () => dsSet(VAULT_KEY, data).catch(e => logger.error("Failed to save vault", e)),
-        400
-    );
+    saveTimer = setTimeout(() => {
+        try {
+            settings.store.syncedVaultData = JSON.stringify(data);
+        } catch (e) {
+            logger.error("Failed to save vault to settings", e);
+        }
+    }, 400);
 }
 
 function mutated() {
@@ -91,9 +94,17 @@ function mutated() {
 
 export async function preloadVault() {
     try {
-        const stored = await dsGet<VaultData>(VAULT_KEY);
-        if (stored?.folders) {
-            data = { version: 1, folders: stored.folders, gifs: stored.gifs ?? {} };
+        if (settings.store.syncedVaultData) {
+            const stored = JSON.parse(settings.store.syncedVaultData) as VaultData;
+            if (stored?.folders) {
+                data = { version: 1, folders: stored.folders, gifs: stored.gifs ?? {} };
+            }
+        } else {
+            const stored = await dsGet<VaultData>(VAULT_KEY);
+            if (stored?.folders) {
+                data = { version: 1, folders: stored.folders, gifs: stored.gifs ?? {} };
+                persist();
+            }
         }
         popoutGeometry = await dsGet<PopoutGeometry>(GEOMETRY_KEY) ?? null;
     } catch (e) {
