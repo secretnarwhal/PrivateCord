@@ -6,27 +6,12 @@
 
 import "./styles.css";
 
-import { definePluginSettings } from "@api/Settings";
 import ErrorBoundary from "@components/ErrorBoundary";
-import definePlugin, { OptionType } from "@utils/types";
+import definePlugin from "@utils/types";
 
 import { MiniPlayer } from "./MiniPlayer";
 import { store } from "./PlayerStore";
-
-const HIDE_GO_LIVE_CLASS = "vc-lm-hide-golive";
-
-function applyGoLiveVisibility(hide: boolean) {
-    document.body.classList.toggle(HIDE_GO_LIVE_CLASS, hide);
-}
-
-const settings = definePluginSettings({
-    hideGoLiveTile: {
-        type: OptionType.BOOLEAN,
-        description: "Hide Discord's game activity / \"Go Live\" tile so the music player takes its place",
-        default: true,
-        onChange: applyGoLiveVisibility
-    }
-});
+import { applyGoLiveVisibility, setMediaKeysListener, settings } from "./settings";
 
 export default definePlugin({
     name: "LocalMusic",
@@ -54,11 +39,13 @@ export default definePlugin({
 
     start() {
         applyGoLiveVisibility(settings.store.hideGoLiveTile);
+        setMediaKeysListener(() => void store.applyMediaKeyMode());
         store.init().catch(e => console.error("[LocalMusic] failed to restore library:", e));
     },
 
     stop() {
         applyGoLiveVisibility(false);
+        setMediaKeysListener(undefined);
         store.destroy();
     },
 

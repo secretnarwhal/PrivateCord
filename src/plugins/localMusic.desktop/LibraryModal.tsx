@@ -11,8 +11,9 @@ import { Span } from "@components/Span";
 import { classes } from "@utils/misc";
 import { formatDuration } from "@utils/text";
 import type { RenderModalProps } from "@vencord/discord-types";
-import { Modal, TextInput, useMemo, useState } from "@webpack/common";
+import { Modal, openModal, TextInput, useMemo, useState } from "@webpack/common";
 
+import { Downloader } from "./Downloader";
 import { cl } from "./MiniPlayer";
 import { store, usePlayer, usePlayerPosition } from "./PlayerStore";
 import type { Track } from "./types";
@@ -118,6 +119,13 @@ export function LibraryModal({ modalProps }: { modalProps: RenderModalProps; }) 
                     >
                         {player.isScanning ? "Scanning…" : "Rescan"}
                     </Button>
+                    <Button
+                        size="small"
+                        variant="secondary"
+                        onClick={() => openModal(props => <Downloader modalProps={props} />)}
+                    >
+                        Download…
+                    </Button>
                 </div>
 
                 <div className={cl("toggles")}>
@@ -129,8 +137,8 @@ export function LibraryModal({ modalProps }: { modalProps: RenderModalProps; }) 
                     />
                     <FormSwitch
                         hideBorder
-                        title="Show video above the player"
-                        description="Renders video files in the sidebar space above the mini player"
+                        title="Show the player panel"
+                        description="The video (or cover art) and its controls, docked above the account panel"
                         value={player.videoDocked}
                         onChange={() => player.toggleVideoDock()}
                     />

@@ -26,3 +26,50 @@ export interface ServerInfo {
     port: number;
     token: string;
 }
+
+/** Everything the main process needs to invoke yt-dlp the way the user configured it. */
+export interface YtDlpOptions {
+    /** where downloads land; must be inside an authorised folder */
+    folder: string;
+    /** explicit binary path, or "" to look next to the music and then on PATH */
+    binary: string;
+    /** extra flags, as typed by the user - split on whitespace, honouring quotes */
+    extraArgs: string;
+    /** browser name for --cookies-from-browser, or "" to not pass it */
+    cookiesFromBrowser: string;
+}
+
+export interface YtDlpInfo {
+    ok: boolean;
+    /** what we actually tried to run, so the UI can say where it looked */
+    binary: string;
+    version?: string;
+    error?: string;
+}
+
+export type DownloadStatus = "running" | "done" | "error" | "cancelled";
+
+export interface DownloadJob {
+    id: string;
+    url: string;
+    /** the output file name once yt-dlp reports one, the URL until then */
+    title: string;
+    /** 0-100, or -1 before yt-dlp reports any progress */
+    percent: number;
+    status: DownloadStatus;
+    /** latest status line; the failure reason once status is "error" */
+    message: string;
+}
+
+export type SearchSource = "youtube" | "ytmusic";
+
+export interface SearchResult {
+    id: string;
+    /** watch URL, handed straight back to yt-dlp to download */
+    url: string;
+    title: string;
+    uploader: string;
+    /** seconds, 0 when unknown */
+    duration: number;
+    thumbnail: string | null;
+}
