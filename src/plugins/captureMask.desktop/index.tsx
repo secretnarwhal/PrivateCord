@@ -10,7 +10,7 @@ import definePlugin, { OptionType, PluginNative, StartAt } from "@utils/types";
 import { ApplicationStreamingStore, MediaEngineStore, React } from "@webpack/common";
 
 import { harvestCss } from "./css";
-import { readChrome, TargetMirror } from "./mirror";
+import { readChrome, readDefs, TargetMirror } from "./mirror";
 import managedStyle from "./styles.css?managed";
 import { findTargetElement, type Target, TARGETS } from "./targets";
 import type { Frame, OverlayStatus, ScrollUpdate } from "./types";
@@ -63,6 +63,30 @@ const settings = definePluginSettings({
             "Keep masked content readable to you by drawing it in a window that screen capture cannot see. "
             + "Turn this off to simply black the content out. Windows and macOS only.",
         default: true,
+        onChange: () => restart()
+    },
+    debugOpaque: {
+        type: OptionType.BOOLEAN,
+        description:
+            "Troubleshooting: build the overlay as an opaque magenta window instead of a transparent one. "
+            + "If magenta appears, transparency was the problem. Safe to stream with.",
+        default: false,
+        onChange: () => restart()
+    },
+    debugNoProtection: {
+        type: OptionType.BOOLEAN,
+        description:
+            "Troubleshooting: turn OFF capture exclusion for the overlay. Only use this while NOT streaming — "
+            + "with this on, the overlay is recorded like any other window and your DMs would be visible.",
+        default: false,
+        onChange: () => restart()
+    },
+    debugDevTools: {
+        type: OptionType.BOOLEAN,
+        description:
+            "Troubleshooting: open DevTools on the overlay window, to inspect the mirrored copy of the DOM. "
+            + "The DevTools window is not capture protected, so close it before streaming.",
+        default: false,
         onChange: () => restart()
     },
     maskStyle: {
@@ -157,6 +181,22 @@ const sendScroll = (update: ScrollUpdate) => {
     Native.send({ type: "scroll", update }).catch(() => { /* next frame will resync */ });
 };
 
+/** Small enough that no single IPC message carries the whole stylesheet set. */
+const CSS_CHUNK_SIZE = 512 * 1024;
+
+/**
+ * Ships the harvested CSS to the overlay in pieces. The full set is tens of
+ * megabytes, which is what made sending it as one message fail silently.
+ */
+async function sendCss({ css, sheets, failed }: Awaited<ReturnType<typeof harvestCss>>) {
+    for (let i = 0; i < css.length; i += CSS_CHUNK_SIZE) {
+        await Native.send({ type: "css-chunk", text: css.slice(i, i + CSS_CHUNK_SIZE) });
+    }
+
+    await Native.send({ type: "css-done", sheets, failed });
+    logger.info(`sent ${css.length} bytes of css from ${sheets} sheets (${failed} skipped)`);
+}
+
 function syncMirrors() {
     if (!mirroring) return;
 
@@ -204,8 +244,15 @@ async function activate() {
         }
 
         const chrome = readChrome();
-        const css = await harvestCss();
-        const result = await Native.start({ css, chrome, ids: enabledTargets().map(t => t.id) });
+        const harvested = await harvestCss();
+        const result = await Native.start({
+            chrome,
+            defs: readDefs(),
+            ids: enabledTargets().map(t => t.id),
+            debugOpaque: settings.store.debugOpaque,
+            debugNoProtection: settings.store.debugNoProtection,
+            debugDevTools: settings.store.debugDevTools
+        });
 
         if (!result.ok) {
             localError = result.reason;
@@ -218,6 +265,8 @@ async function activate() {
             await Native.stop();
             return;
         }
+
+        await sendCss(harvested);
 
         mirroring = true;
         syncMirrors();
@@ -296,6 +345,7 @@ function verdict(status: OverlayStatus): [string, string] {
     if (!status.bridge) return ["#f23f43", "The overlay loaded but its preload bridge did not attach, so no frames can reach it."];
     if (!status.painted) return ["#f23f43", "The bridge is up but no frames have arrived — check that a DM target is on screen."];
     if (!status.nodes) return ["#f23f43", "Frames are arriving but rendering empty — the mirrored markup is not surviving the copy."];
+    if (!status.cssBytes) return ["#f23f43", "Markup is mirroring but no CSS reached the overlay, so it renders unstyled."];
     if (!status.visible) return ["#f0b232", "The overlay is hidden. It only shows while the Discord window is focused."];
 
     return ["#23a55a", "Mirror is live — you should see your DMs, and capture should not."];
@@ -328,6 +378,9 @@ function StatusPanel() {
         ["Nodes in last frame", String(status.nodes)],
         ["Overlay visible", status.visible ? "yes" : "no"],
         ["Overlay bounds", status.bounds ?? "—"],
+        ["Zoom scale", status.scale ? status.scale.toFixed(3) : "—"],
+        ["Stylesheets read", `${(status.cssSheets ?? 0) - (status.cssFailed ?? 0)} / ${status.cssSheets ?? 0}`],
+        ["CSS applied", status.cssBytes ? `${Math.round(status.cssBytes / 1024)} KB` : "—"],
         ["Furthest stage", status.stage]
     ];
 

@@ -27,6 +27,8 @@ export interface Frame {
     html: string;
     /** scrollTop of every scrollable descendant, in document order */
     scroll: number[];
+    /** Discord's viewport in CSS px, used to derive the zoom scale */
+    viewport: { width: number; height: number; };
 }
 
 /** A scroll-only update, so dragging the DM list doesn't reserialize it. */
@@ -35,11 +37,25 @@ export interface ScrollUpdate {
     scroll: number[];
 }
 
+/** Discord's styling, read as text in the renderer where it is same-origin. */
+export interface HarvestedCss {
+    css: string;
+    sheets: number;
+    failed: number;
+}
+
 export interface OverlayStartOptions {
     chrome: Chrome;
-    css: string;
+    /** Global SVG mask/clipPath definitions the cloned markup references by id */
+    defs: string;
     /** ids of the targets that will be mirrored */
     ids: string[];
+    /** Troubleshooting: build the window opaque, to test transparency support. */
+    debugOpaque?: boolean;
+    /** Troubleshooting: skip capture exclusion, to test whether it is what hides the window. */
+    debugNoProtection?: boolean;
+    /** Troubleshooting: open DevTools on the overlay to inspect the mirrored DOM. */
+    debugDevTools?: boolean;
 }
 
 /** How far the overlay got, so a hard failure reads differently from a blank mirror. */
@@ -58,6 +74,12 @@ export interface OverlayStatus {
     nodes: number;
     /** Furthest point start() reached; survives teardown so failures stay legible. */
     stage: string;
+    /** Derived zoom factor the overlay is scaling by; 1 means Discord is at 100% */
+    scale?: number;
+    /** Stylesheets read in the renderer, and the bytes the overlay applied */
+    cssSheets?: number;
+    cssFailed?: number;
+    cssBytes?: number;
     bounds?: string;
     lastError?: string;
 }

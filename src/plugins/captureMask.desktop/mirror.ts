@@ -28,6 +28,35 @@ function escapeAttr(value: string) {
     return value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
 }
 
+/** Attributes holding a URL that has to survive the move to another origin. */
+const URL_ATTRS = new Set(["src", "href", "xlink:href", "poster"]);
+
+/**
+ * The overlay renders from a data: URL, so it has an opaque origin: Discord's
+ * root-relative `/assets/…` avatars and icons resolve to nothing there and the
+ * rows come out blank. Fragment references must be left alone — `#svg-mask-…`
+ * points at the mask definitions, not at a document.
+ */
+function absolutiseUrl(value: string) {
+    const v = value.trim();
+    if (!v || v.startsWith("#") || /^(?:data:|blob:|https?:|\/\/)/.test(v)) return value;
+
+    try {
+        return new URL(v, location.href).href;
+    } catch {
+        return value;
+    }
+}
+
+function absolutiseSrcset(value: string) {
+    return value.split(",")
+        .map(part => {
+            const [url, ...rest] = part.trim().split(/\s+/);
+            return url ? [absolutiseUrl(url), ...rest].join(" ") : part.trim();
+        })
+        .join(", ");
+}
+
 /**
  * Serialises an element's start tag, dropping our own mask classes so the
  * overlay's copy of Discord's CSS cannot blank the clone out.
@@ -40,6 +69,13 @@ function openTag(el: Element, opts: { rootId?: string; chain?: boolean; } = {}) 
         if (name === "class") {
             v = value.split(/\s+/).filter(c => c && !c.startsWith(CMASK_CLASS_PREFIX)).join(" ");
             if (!v) continue;
+        } else if (URL_ATTRS.has(name)) {
+            v = absolutiseUrl(value);
+        } else if (name === "srcset" || name === "imagesrcset") {
+            v = absolutiseSrcset(value);
+        } else if (name === "style" && value.includes("url(")) {
+            v = value.replace(/url\((\s*['"]?)([^)'"]+)(['"]?\s*)\)/g,
+                (_m, open: string, url: string, close: string) => `url(${open}${absolutiseUrl(url)}${close})`);
         }
         out += ` ${name}="${escapeAttr(v)}"`;
     }
@@ -78,6 +114,22 @@ function readScroll(el: HTMLElement): number[] {
 function readRect(el: HTMLElement): Rect {
     const { x, y, width, height } = el.getBoundingClientRect();
     return { x, y, width, height };
+}
+
+/**
+ * Discord clips avatars with SVG masks whose <mask> and <clipPath> definitions
+ * live in standalone <svg> elements at the document root. A subtree clone
+ * references them by id but does not contain them, so every masked avatar
+ * renders as nothing — which reads as a permanently loading row. These get
+ * copied into the overlay alongside the markup.
+ */
+export function readDefs(): string {
+    return Array.from(document.querySelectorAll("svg"))
+        .filter(svg =>
+            !svg.closest("[class*=\"privateChannels_\"]") &&
+            svg.querySelector("mask[id], clipPath[id], filter[id], linearGradient[id], radialGradient[id], pattern[id]"))
+        .map(svg => svg.outerHTML)
+        .join("");
 }
 
 export function readChrome(): Chrome {
@@ -208,6 +260,15 @@ export class TargetMirror {
         this.lastHtml = html;
         this.lastRect = rect;
 
-        this.onFrame({ id: this.target.id, rect, html, scroll: readScroll(el) });
+        this.onFrame({
+            id: this.target.id,
+            rect,
+            html,
+            scroll: readScroll(el),
+            // Lets the main process derive Discord's real zoom by comparing this
+            // against the window's content bounds, since its Electron build does
+            // not expose getZoomFactor.
+            viewport: { width: window.innerWidth, height: window.innerHeight }
+        });
     }
 }

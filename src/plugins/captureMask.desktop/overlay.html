@@ -17,7 +17,11 @@
         media-src https: data: blob:;
         script-src 'unsafe-inline';">
     <title>CaptureMask</title>
-    <style>
+    <!--
+        Discord's stylesheets are inserted before this block at runtime, so the
+        rules below always win the cascade against them.
+    -->
+    <style id="cm-own-css">
         html,
         body {
             margin: 0;
@@ -31,11 +35,31 @@
             user-select: none;
         }
 
+        /*
+         * Everything inside is laid out in Discord's CSS pixels and scaled to
+         * this window's pixels in one place. Doing it with a transform avoids
+         * needing an Electron zoom API, which this build does not expose.
+         */
+        #cm-slots {
+            position: absolute;
+            top: 0;
+            left: 0;
+            transform-origin: 0 0;
+        }
+
         /* Each mirrored target is parked at its counterpart's viewport rect. */
         .cm-slot {
-            position: fixed;
+            position: absolute;
             overflow: hidden;
             contain: layout paint style;
+        }
+
+        /* Referenced by the clone through url(#id); must never paint on its own. */
+        #cm-defs {
+            position: absolute;
+            width: 0;
+            height: 0;
+            overflow: hidden;
         }
 
         /*
@@ -56,22 +80,46 @@
             max-height: none !important;
         }
 
-        /* Nothing in a mirror should animate — it repaints from scratch anyway. */
+        /*
+         * Animations are snapped to their final frame rather than disabled.
+         * Discord fades its message list in with a keyframe animation over a
+         * base rule of opacity:0, so `animation: none` does not freeze those
+         * messages — it deletes the only thing that ever made them visible, and
+         * the un-animated loading skeleton shows through instead. Running every
+         * animation to completion in 1ms lands on the finished state with no
+         * flicker when a frame is replaced.
+         */
         [data-vc-cmask-root] * {
-            animation: none !important;
+            animation-duration: 1ms !important;
+            animation-delay: 0s !important;
+            animation-iteration-count: 1 !important;
+            animation-fill-mode: forwards !important;
             transition: none !important;
         }
+
+        /*
+         * Discord's copied classes and inline styles may carry its own zoom or
+         * transform. The rects we are given already account for those, so
+         * honouring them here would scale everything twice.
+         */
+        html,
+        body {
+            zoom: 1 !important;
+            transform: none !important;
+            scale: none !important;
+        }
     </style>
-    <style id="cm-discord-css"></style>
 </head>
 
 <body>
+    <div id="cm-defs"></div>
     <div id="cm-slots"></div>
     <script>
         "use strict";
 
         const slots = document.getElementById("cm-slots");
-        const cssNode = document.getElementById("cm-discord-css");
+        const defsNode = document.getElementById("cm-defs");
+        const ownCss = document.getElementById("cm-own-css");
 
         let painted = 0;
         const report = info => window.__captureMask?.report?.(info);
@@ -129,6 +177,28 @@
             return sanitise(doc.body);
         }
 
+        /*
+         * Discord's CSS arrives as text in chunks rather than as <link> URLs:
+         * this document's origin is opaque, so fetching those URLs from here is
+         * refused, while the renderer that sent them is same-origin with
+         * discord.com and can always read them. Chunking keeps any single IPC
+         * message small — the whole stylesheet set is tens of megabytes.
+         */
+        let cssChunks = [];
+
+        function applyCss() {
+            for (const old of document.querySelectorAll(".cm-sheet")) old.remove();
+
+            const style = document.createElement("style");
+            style.className = "cm-sheet";
+            style.textContent = cssChunks.join("");
+            // Ahead of our own rules, so ours still win the cascade
+            document.head.insertBefore(style, ownCss);
+
+            report({ cssBytes: style.textContent.length });
+            cssChunks = [];
+        }
+
         function slotFor(id) {
             let slot = slots.querySelector(`[data-slot="${CSS.escape(id)}"]`);
             if (!slot) {
@@ -151,8 +221,20 @@
 
         function handle(msg) {
             switch (msg.type) {
+                case "css-chunk":
+                    cssChunks.push(msg.text);
+                    break;
+
+                case "css-done":
+                    applyCss();
+                    report({ cssSheets: msg.sheets, cssFailed: msg.failed });
+                    break;
+
                 case "init": {
-                    cssNode.textContent = msg.css ?? "";
+
+                    // Sanitised like any mirrored markup: these come from the
+                    // same document and are equally untrusted.
+                    if (msg.defs) defsNode.replaceChildren(...parse(msg.defs).childNodes);
 
                     const { chrome } = msg;
                     if (chrome) {
@@ -186,6 +268,15 @@
                 case "scroll": {
                     const slot = slots.querySelector(`[data-slot="${CSS.escape(msg.update.id)}"]`);
                     if (slot) applyScroll(slot, msg.update.scroll);
+                    break;
+                }
+
+                case "scale": {
+                    // Discord's zoom, derived in the main process. Everything is
+                    // positioned in Discord's CSS pixels, so one transform here
+                    // aligns every slot at once.
+                    slots.style.transform = `scale(${msg.value})`;
+                    report({ scale: msg.value });
                     break;
                 }
 

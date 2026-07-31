@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-import { app, BrowserWindow, ipcMain, IpcMainInvokeEvent } from "electron";
+import { app, BrowserWindow, ipcMain, IpcMainInvokeEvent, session } from "electron";
 import overlayHtml from "file://overlay.html?minify&base64";
 import { mkdir, writeFile } from "fs/promises";
 import { join } from "path";
@@ -68,27 +68,78 @@ ipcMain.on(REPORT_CHANNEL, (_event, info: Partial<OverlayStatus>) => {
 });
 
 /**
- * Discord ships its own Electron fork, and it does not expose
- * webContents.getZoomFactor/setZoomFactor — on this build zoom is only readable
- * as the `zoomFactor` property. Probe for whichever exists rather than assuming,
- * and fall back to 1:1 so a missing API costs alignment, not the whole overlay.
+ * Discord's Electron fork exposes no getZoomFactor, so the zoom is derived
+ * instead of asked for: the renderer reports its viewport in CSS pixels, and
+ * the window's content bounds are the same area in device-independent pixels.
+ * Their ratio *is* the zoom factor, whatever API the build happens to have.
+ *
+ * The overlay applies it as a CSS transform rather than a window zoom, so no
+ * Electron zoom API is needed on that side either.
  */
-function readZoom(contents: Electron.WebContents): number {
-    try {
-        const wc = contents as any;
-        if (typeof wc.getZoomFactor === "function") return wc.getZoomFactor();
-        if (typeof wc.zoomFactor === "number" && wc.zoomFactor > 0) return wc.zoomFactor;
-    } catch { /* fall through to 1 */ }
+let lastViewportWidth = 0;
+let lastScale = 0;
 
-    return 1;
+function pushScale(contentWidth: number) {
+    if (!lastViewportWidth || !contentWidth) return;
+
+    const scale = contentWidth / lastViewportWidth;
+    if (!Number.isFinite(scale) || scale <= 0 || Math.abs(scale - lastScale) < 0.001) return;
+
+    lastScale = scale;
+    for (const { window } of overlays.values()) {
+        if (!window.isDestroyed()) window.webContents.send(CHANNEL, { type: "scale", value: scale });
+    }
 }
 
-function writeZoom(contents: Electron.WebContents, zoom: number) {
-    try {
-        const wc = contents as any;
-        if (typeof wc.setZoomFactor === "function") wc.setZoomFactor(zoom);
-        else if ("zoomFactor" in wc) wc.zoomFactor = zoom;
-    } catch { /* zoom mismatch is cosmetic */ }
+const PARTITION = "persist:vencord-capturemask";
+
+let sessionPrepared = false;
+
+/**
+ * The overlay renders from a data: URL, which gives it an opaque origin.
+ * Discord serves its assets with Cross-Origin-Resource-Policy, and CORP refuses
+ * to hand a resource to a document of a different origin — so every stylesheet,
+ * font and image is rejected before CSP is even consulted. Stripping those
+ * headers is safe here because this session is private to the overlay: nothing
+ * else loads through it, and it carries no Discord credentials.
+ */
+function prepareSession() {
+    if (sessionPrepared) return session.fromPartition(PARTITION);
+    sessionPrepared = true;
+
+    const overlaySession = session.fromPartition(PARTITION);
+
+    overlaySession.webRequest.onHeadersReceived({ urls: ["*://*/*"] }, (details, callback) => {
+        const headers = details.responseHeaders ?? {};
+
+        for (const key of Object.keys(headers)) {
+            switch (key.toLowerCase()) {
+                case "cross-origin-resource-policy":
+                case "cross-origin-embedder-policy":
+                case "content-security-policy":
+                case "content-security-policy-report-only":
+                    delete headers[key];
+                    break;
+            }
+        }
+
+        // Fonts referenced from @font-face are fetched in CORS mode, so they
+        // need this too, not just the stylesheets that name them.
+        headers["access-control-allow-origin"] = ["*"];
+
+        callback({ responseHeaders: headers });
+    });
+
+    overlaySession.webRequest.onErrorOccurred({ urls: ["*://*/*"] }, details => {
+        // Cancelled media is routine — the mirror replaces its markup constantly,
+        // which aborts any attachment still downloading. Recording those buried
+        // the failure that actually mattered.
+        if (details.error === "net::ERR_ABORTED") return;
+
+        status.lastError = `${details.error} — ${details.url}`;
+    });
+
+    return overlaySession;
 }
 
 let preloadPath: string | undefined;
@@ -142,6 +193,7 @@ export async function start(event: IpcMainInvokeEvent, options: OverlayStartOpti
 
     try {
         const preload = await ensurePreload();
+        prepareSession();
 
         const overlay = new BrowserWindow({
             // Deliberately not a child of the Discord window: on Windows a
@@ -153,8 +205,11 @@ export async function start(event: IpcMainInvokeEvent, options: OverlayStartOpti
             alwaysOnTop: true,
             show: false,
             frame: false,
-            transparent: true,
-            backgroundColor: "#00000000",
+            // Opaque mode is a diagnostic: a transparent window combined with
+            // capture exclusion composites to nothing on some drivers, and this
+            // tells that apart from the page simply not painting.
+            transparent: !options.debugOpaque,
+            backgroundColor: options.debugOpaque ? "#ff00ff" : "#00000000",
             hasShadow: false,
             resizable: false,
             movable: false,
@@ -171,15 +226,16 @@ export async function start(event: IpcMainInvokeEvent, options: OverlayStartOpti
                 nodeIntegration: false,
                 webSecurity: true,
                 // Its own partition keeps Discord's session and cookies out of a
-                // window whose whole job is rendering other people's content.
-                partition: "persist:vencord-capturemask",
+                // window whose whole job is rendering other people's content,
+                // and lets prepareSession() relax CORP without touching Discord.
+                partition: PARTITION,
                 backgroundThrottling: false
             }
         });
 
         // Applied before the window is ever shown, so no frame of it can be
         // recorded in the gap between creation and protection.
-        overlay.setContentProtection(true);
+        if (!options.debugNoProtection) overlay.setContentProtection(true);
         overlay.setIgnoreMouseEvents(true);
         overlay.setMenu?.(null);
         // "pop-up-menu" sits above normal windows without the aggression of the
@@ -187,7 +243,7 @@ export async function start(event: IpcMainInvokeEvent, options: OverlayStartOpti
         overlay.setAlwaysOnTop(true, "pop-up-menu");
 
         status.created = true;
-        status.contentProtection = true;
+        status.contentProtection = !options.debugNoProtection;
         status.lastError = undefined;
         status.stage = "created";
 
@@ -201,12 +257,9 @@ export async function start(event: IpcMainInvokeEvent, options: OverlayStartOpti
             if (overlay.isDestroyed() || main.isDestroyed()) return;
 
             try {
-                overlay.setBounds(main.getContentBounds());
-
-                // Match Discord's zoom so one CSS pixel means the same thing in
-                // both windows and the mirrored rects land where they should.
-                const zoom = readZoom(main.webContents);
-                if (readZoom(overlay.webContents) !== zoom) writeZoom(overlay.webContents, zoom);
+                const bounds = main.getContentBounds();
+                overlay.setBounds(bounds);
+                pushScale(bounds.width);
             } catch (err) {
                 status.lastError = `bounds sync: ${err}`;
             }
@@ -255,9 +308,16 @@ export async function start(event: IpcMainInvokeEvent, options: OverlayStartOpti
         status.loaded = true;
         status.stage = "loaded";
 
-        overlay.webContents.send(CHANNEL, { type: "init", css: options.css, chrome: options.chrome });
+        overlay.webContents.send(CHANNEL, {
+            type: "init",
+            chrome: options.chrome,
+            defs: options.defs
+        });
 
         if (main.isVisible() && !main.isMinimized()) setVisible(true);
+
+        // Detached, because the overlay itself is focusable:false and click-through
+        if (options.debugDevTools) overlay.webContents.openDevTools({ mode: "detach" });
 
         status.stage = "running";
         return { ok: true };
@@ -273,12 +333,23 @@ export function getStatus(_event: IpcMainInvokeEvent): OverlayStatus {
     return { ...status };
 }
 
-export function send(event: IpcMainInvokeEvent, message: unknown) {
+export function send(event: IpcMainInvokeEvent, message: any) {
     const main = BrowserWindow.fromWebContents(event.sender);
     if (!main) return;
 
     const overlay = overlays.get(main.id);
     if (!overlay || overlay.window.isDestroyed()) return;
+
+    // Frames carry the renderer's viewport, which is half of the zoom ratio.
+    // Recomputing here keeps the scale correct across zoom changes without the
+    // renderer having to know anything about window bounds.
+    const viewport = message?.frame?.viewport;
+    if (viewport?.width) {
+        lastViewportWidth = viewport.width;
+        try {
+            pushScale(main.getContentBounds().width);
+        } catch { /* bounds unavailable mid-teardown */ }
+    }
 
     overlay.window.webContents.send(CHANNEL, message);
 }
