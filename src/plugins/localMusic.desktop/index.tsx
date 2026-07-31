@@ -11,11 +11,13 @@ import definePlugin from "@utils/types";
 
 import { MiniPlayer } from "./MiniPlayer";
 import { store } from "./PlayerStore";
+import { sessionStore } from "./session/SessionStore";
+import { handleIncomingSignal } from "./session/signaling";
 import { applyGoLiveVisibility, setMediaKeysListener, settings } from "./settings";
 
 export default definePlugin({
     name: "LocalMusic",
-    description: "A music player for your local files, docked above the account panel",
+    description: "A music player for your local files, docked above the account panel — with serverless listen-along sessions",
     tags: ["Media", "Activity"],
     authors: [{ name: "Ryan", id: 0n }],
     settings,
@@ -37,6 +39,14 @@ export default definePlugin({
         }
     ],
 
+    flux: {
+        // listen-along handshakes ride over DMs; anything not signal-shaped is
+        // rejected on a string prefix check before any real work happens
+        MESSAGE_CREATE({ message, optimistic }: { message: any; optimistic: boolean; }) {
+            if (!optimistic) handleIncomingSignal(message);
+        }
+    },
+
     start() {
         applyGoLiveVisibility(settings.store.hideGoLiveTile);
         setMediaKeysListener(() => void store.applyMediaKeyMode());
@@ -46,6 +56,9 @@ export default definePlugin({
     stop() {
         applyGoLiveVisibility(false);
         setMediaKeysListener(undefined);
+        // end/leave any session first — it says goodbye over channels the
+        // player teardown is about to close
+        sessionStore.destroy();
         store.destroy();
     },
 

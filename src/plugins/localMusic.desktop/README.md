@@ -286,3 +286,67 @@ are more durable than a hashed class — but the prefix itself does change acros
 Discord redesigns. If the tile is still visible after enabling the plugin,
 inspect it in devtools and add its `class*=` prefix to that rule. Turning the
 setting off restores the tile.
+
+## Listen along
+
+Group listening sessions with other people running this plugin — no servers
+anywhere, for anyone.
+
+### How a session works
+
+- The **host** opens the **Listen along** tab (the 👥 button on the panel) and
+  starts a session. That mints a **group key** (`LMS1.…`) encoding the host's
+  user id plus a random 16-byte secret. Hand the key to whoever you want in the
+  session; anyone with it can join.
+- A **joiner** pastes the key. Their plugin DMs the host a handshake: every
+  signaling message is AES-256-GCM encrypted with a key HKDF-derived from the
+  shared secret, chunked under Discord's message limit, and deleted once the
+  connection is up (each side deletes its own — they're visible for a few
+  seconds). Being able to decrypt *is* the authentication.
+- The handshake carries a WebRTC offer/answer (non-trickle ICE, public STUN).
+  From then on everything — control messages and the music itself — flows over
+  peer-to-peer data channels in a star around the host. Discord is out of the
+  loop.
+
+### Audio
+
+Listeners don't stream a compressed feed — they receive the **actual file**
+over the data channel (16KB chunks, backpressured), verified against its
+sha256, and cached on disk (size-capped LRU, configurable in settings; the
+existing loopback server serves it with Range support). Playback is local on
+every client and synchronized:
+
+- NTP-style clock offset estimation over the control channel (min-RTT sample
+  wins, smoothed)
+- track starts are *scheduled* ~300ms in the future on the shared clock, so
+  everyone starts together
+- a 500ms drift loop hard-seeks past 250ms of error and inaudibly nudges
+  `playbackRate` (≤2%) inside it
+
+A listener who joins mid-track shows "Syncing…" until the transfer lands, then
+drops in at the live position. The front of the queue is prefetched to
+everyone, so track transitions are gapless. A rejoin reuses the cache
+(`file-have`) and starts instantly.
+
+### The unified queue & permissions
+
+The host's queue is the queue — mirrored to every listener, along with the
+host's library listing so listeners can browse and add. What listeners may do
+is up to the host, **per member, toggleable live** from the member list:
+
+| permission | covers |
+|---|---|
+| Playback control | the slider, play/pause, skip, picking a track |
+| Add to queue | queue-add / play-next from the host's library |
+| Reorder queue | drag-reorder, remove, clear |
+
+Defaults for new joiners are plugin settings. Every request is re-checked by
+the host at execution time — the disabled UI on the listener side is cosmetic.
+
+### Limitations
+
+- Joiner must be able to DM the host (friends or a mutual server).
+- No TURN relay: a small fraction of NAT combinations (~5-10%) can't connect
+  peer-to-peer. Ethernet/typical home NATs are fine.
+- Video files play for listeners too (the whole file transfers), but cover art
+  isn't transferred yet.

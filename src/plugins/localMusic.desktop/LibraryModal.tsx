@@ -15,12 +15,14 @@ import { Modal, openModal, React, TextInput, useMemo, useState } from "@webpack/
 import { Downloader } from "./Downloader";
 import { cl, ControlButton, Icon, PATHS, useArtAccent } from "./MiniPlayer";
 import { store, usePlayer, usePlayerPosition } from "./PlayerStore";
+import { useSession } from "./session/SessionStore";
+import { SessionLibraryList, SessionPanel, SessionQueueList } from "./session/SessionUI";
 import type { QueueItem, Track } from "./types";
 
 /** Rendering every row of a 20k track library would lock the UI, so cap it. */
 const MAX_ROWS = 300;
 
-export type LibraryTab = "library" | "queue";
+export type LibraryTab = "library" | "queue" | "session";
 
 /** Opens the library, optionally straight onto the queue. */
 export function openLibrary(tab: LibraryTab = "library") {
@@ -264,12 +266,16 @@ export function LibraryModal({ modalProps, initialTab = "library" }: {
     initialTab?: LibraryTab;
 }) {
     const player = usePlayer();
+    const session = useSession();
     const [tab, setTab] = useState<LibraryTab>(initialTab);
     const [query, setQuery] = useState("");
 
+    // a listener browses the host's library and the shared queue, not their own
+    const isListener = session.role === "listener";
+
     const { currentTrack } = player;
     const accent = useArtAccent(currentTrack ? player.artUrl(currentTrack) : null);
-    const queued = player.queueEntries.length;
+    const queued = isListener ? session.sessionQueue.length : player.queueEntries.length;
 
     const filtered = useMemo(() => {
         const needle = query.trim().toLowerCase();
@@ -312,8 +318,15 @@ export function LibraryModal({ modalProps, initialTab = "library" }: {
                         Up next
                         {queued > 0 && <span className={cl("tab-count")}>{queued}</span>}
                     </button>
+                    <button
+                        className={classes(cl("tab"), tab === "session" && cl("tab-active"))}
+                        onClick={() => setTab("session")}
+                    >
+                        Listen along
+                        {session.memberCount > 1 && <span className={cl("tab-count")}>{session.memberCount}</span>}
+                    </button>
 
-                    {tab === "queue" && queued > 0 && (
+                    {tab === "queue" && queued > 0 && !isListener && (
                         <Button
                             className={cl("tabs-action")}
                             size="small"
@@ -325,9 +338,11 @@ export function LibraryModal({ modalProps, initialTab = "library" }: {
                     )}
                 </div>
 
-                {tab === "queue" ? <QueueList /> : (
-                    <>
-                        <div className={cl("folder-row")}>
+                {tab === "session" ? <SessionPanel /> : tab === "queue"
+                    ? (isListener ? <SessionQueueList /> : <QueueList />)
+                    : isListener ? <SessionLibraryList /> : (
+                        <>
+                            <div className={cl("folder-row")}>
                             <div className={cl("folder-path")} title={player.folder ?? undefined}>
                                 {player.folder ?? "No folder selected"}
                             </div>

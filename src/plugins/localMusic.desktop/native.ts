@@ -7,10 +7,10 @@
 import { CspPolicies, CssSrc, ImageAndMediaSrc, ImageSrc } from "@main/csp";
 import { RendererSettings } from "@main/settings";
 import { ChildProcess, spawn } from "child_process";
-import { randomBytes, timingSafeEqual } from "crypto";
+import { createHash, Hash, randomBytes, timingSafeEqual } from "crypto";
 import { app, BrowserWindow, dialog, globalShortcut, IpcMainInvokeEvent, session } from "electron";
-import { createReadStream, Dirent, existsSync } from "fs";
-import { readdir, stat, unlink, writeFile } from "fs/promises";
+import { createReadStream, createWriteStream, Dirent, existsSync, WriteStream } from "fs";
+import { mkdir, open, readdir, readFile, rename, rm, stat, unlink, writeFile } from "fs/promises";
 import { createServer, IncomingMessage, Server, ServerResponse } from "http";
 import { AddressInfo } from "net";
 import { basename, extname, join, resolve, sep } from "path";
@@ -1135,6 +1135,266 @@ export async function closeBrowser(_: IpcMainInvokeEvent) {
 
 // #endregion
 
+// #region listen-along cache
+
+/**
+ * Where files received from a listen-along host land. Keyed by content hash so
+ * a rejoin (or the same track queued again) never transfers twice. Registered
+ * as an allowed root, which lets the existing /media endpoint serve cached
+ * files — Range support and all — exactly like library files.
+ */
+const CACHE_DIR = join(app.getPath("userData"), "vc-localmusic-cache");
+const CACHE_INDEX_FILE = join(CACHE_DIR, "cache-index.json");
+
+interface CacheEntry {
+    hash: string;
+    file: string;
+    size: number;
+    lastUsed: number;
+}
+
+let cacheLimit = 2 * 1024 * 1024 * 1024;
+let cacheIndex: Map<string, CacheEntry> | null = null;
+
+interface CacheTransfer {
+    stream: WriteStream;
+    hasher: Hash;
+    hash: string;
+    ext: string;
+    partPath: string;
+    finalPath: string;
+    written: number;
+    expected: number;
+}
+
+const cacheTransfers = new Map<string, CacheTransfer>();
+
+const isValidHash = (hash: string) => /^[0-9a-f]{64}$/.test(hash);
+
+async function loadCacheIndex(): Promise<Map<string, CacheEntry>> {
+    if (cacheIndex) return cacheIndex;
+
+    cacheIndex = new Map();
+    try {
+        const entries: CacheEntry[] = JSON.parse(await readFile(CACHE_INDEX_FILE, "utf8"));
+        for (const entry of entries) {
+            // only trust rows whose file still exists
+            if (existsSync(join(CACHE_DIR, entry.file))) cacheIndex.set(entry.hash, entry);
+        }
+    } catch {
+        // first run, or a corrupt index — rebuild from what is on disk
+        try {
+            for (const name of await readdir(CACHE_DIR)) {
+                const hash = name.slice(0, 64);
+                if (!isValidHash(hash) || name.endsWith(".part") || name === basename(CACHE_INDEX_FILE)) continue;
+
+                const { size, mtimeMs } = await stat(join(CACHE_DIR, name));
+                cacheIndex.set(hash, { hash, file: name, size, lastUsed: mtimeMs });
+            }
+        } catch { }
+    }
+
+    return cacheIndex;
+}
+
+function saveCacheIndex() {
+    if (!cacheIndex) return;
+    writeFile(CACHE_INDEX_FILE, JSON.stringify([...cacheIndex.values()])).catch(() => { });
+}
+
+/** Oldest-used entries go first until the cache fits the configured limit. */
+async function evictCache() {
+    const index = await loadCacheIndex();
+
+    let total = 0;
+    for (const entry of index.values()) total += entry.size;
+    if (total <= cacheLimit) return;
+
+    const byAge = [...index.values()].sort((a, b) => a.lastUsed - b.lastUsed);
+    for (const entry of byAge) {
+        if (total <= cacheLimit) break;
+
+        index.delete(entry.hash);
+        total -= entry.size;
+        await rm(join(CACHE_DIR, entry.file), { force: true }).catch(() => { });
+    }
+
+    saveCacheIndex();
+}
+
+/**
+ * Prepares the cache for a session: creates it, makes it servable, sweeps
+ * orphaned .part files, and applies the size limit (0 = unlimited).
+ */
+export async function getCacheInfo(_: IpcMainInvokeEvent, limitBytes: number): Promise<{ dir: string; }> {
+    await mkdir(CACHE_DIR, { recursive: true });
+    allowedRoots.add(resolve(CACHE_DIR));
+    cacheLimit = limitBytes > 0 ? limitBytes : Number.MAX_SAFE_INTEGER;
+
+    try {
+        for (const name of await readdir(CACHE_DIR)) {
+            if (name.endsWith(".part")) await rm(join(CACHE_DIR, name), { force: true }).catch(() => { });
+        }
+    } catch { }
+
+    await loadCacheIndex();
+    await evictCache();
+    return { dir: CACHE_DIR };
+}
+
+/** Full path of a cached file, or null. Touches the entry for LRU purposes. */
+export async function cacheHas(_: IpcMainInvokeEvent, contentHash: string): Promise<string | null> {
+    if (!isValidHash(contentHash)) return null;
+
+    const entry = (await loadCacheIndex()).get(contentHash);
+    if (!entry) return null;
+
+    const path = join(CACHE_DIR, entry.file);
+    if (!existsSync(path)) {
+        cacheIndex!.delete(contentHash);
+        saveCacheIndex();
+        return null;
+    }
+
+    entry.lastUsed = Date.now();
+    saveCacheIndex();
+    return path;
+}
+
+export async function cacheBegin(_: IpcMainInvokeEvent, contentHash: string, ext: string, size: number): Promise<string | null> {
+    const cleanExt = ext.toLowerCase();
+    if (!isValidHash(contentHash) || !(AUDIO_EXTS.has(cleanExt) || VIDEO_EXTS.has(cleanExt))) return null;
+
+    await mkdir(CACHE_DIR, { recursive: true });
+    allowedRoots.add(resolve(CACHE_DIR));
+
+    const id = randomBytes(8).toString("hex");
+    const partPath = join(CACHE_DIR, `${contentHash}${cleanExt}.${id}.part`);
+
+    cacheTransfers.set(id, {
+        stream: createWriteStream(partPath),
+        hasher: createHash("sha256"),
+        hash: contentHash,
+        ext: cleanExt,
+        partPath,
+        finalPath: join(CACHE_DIR, `${contentHash}${cleanExt}`),
+        written: 0,
+        expected: size
+    });
+
+    return id;
+}
+
+export async function cacheAppend(_: IpcMainInvokeEvent, id: string, chunk: Uint8Array): Promise<boolean> {
+    const transfer = cacheTransfers.get(id);
+    if (!transfer) return false;
+
+    // a runaway sender must not fill the disk past what it declared
+    if (transfer.written + chunk.length > transfer.expected) {
+        await abortTransfer(id);
+        return false;
+    }
+
+    transfer.hasher.update(chunk);
+    transfer.written += chunk.length;
+
+    if (!transfer.stream.write(chunk)) {
+        await new Promise<void>(res => transfer.stream.once("drain", () => res()));
+    }
+    return true;
+}
+
+async function abortTransfer(id: string) {
+    const transfer = cacheTransfers.get(id);
+    if (!transfer) return;
+
+    cacheTransfers.delete(id);
+    await new Promise<void>(res => transfer.stream.end(() => res()));
+    await rm(transfer.partPath, { force: true }).catch(() => { });
+}
+
+/**
+ * Ends a transfer, verifying the bytes really are the file the host promised.
+ * @returns the final path on success, null on a hash/size mismatch
+ */
+export async function cacheFinish(_: IpcMainInvokeEvent, id: string): Promise<string | null> {
+    const transfer = cacheTransfers.get(id);
+    if (!transfer) return null;
+
+    cacheTransfers.delete(id);
+    await new Promise<void>(res => transfer.stream.end(() => res()));
+
+    if (transfer.written !== transfer.expected || transfer.hasher.digest("hex") !== transfer.hash) {
+        await rm(transfer.partPath, { force: true }).catch(() => { });
+        return null;
+    }
+
+    await rename(transfer.partPath, transfer.finalPath);
+
+    const index = await loadCacheIndex();
+    index.set(transfer.hash, {
+        hash: transfer.hash,
+        file: basename(transfer.finalPath),
+        size: transfer.written,
+        lastUsed: Date.now()
+    });
+    saveCacheIndex();
+    await evictCache();
+
+    return transfer.finalPath;
+}
+
+export async function cacheAbort(_: IpcMainInvokeEvent, id: string) {
+    await abortTransfer(id);
+}
+
+/** hash memo keyed by path — invalidated when the file's mtime or size moves */
+const hashMemo = new Map<string, { mtimeMs: number; size: number; hash: string; }>();
+
+/** Streaming sha256 of a library file; the identity a transfer is verified against. */
+export async function hashFile(_: IpcMainInvokeEvent, path: string): Promise<string | null> {
+    if (!isPathAllowed(path)) return null;
+
+    try {
+        const { mtimeMs, size } = await stat(path);
+
+        const memo = hashMemo.get(path);
+        if (memo && memo.mtimeMs === mtimeMs && memo.size === size) return memo.hash;
+
+        const hash = await new Promise<string>((res, rej) => {
+            const hasher = createHash("sha256");
+            createReadStream(path)
+                .on("data", chunk => hasher.update(chunk))
+                .on("end", () => res(hasher.digest("hex")))
+                .on("error", rej);
+        });
+
+        hashMemo.set(path, { mtimeMs, size, hash });
+        return hash;
+    } catch {
+        return null;
+    }
+}
+
+/** One slice of a file, for the host's file-channel sender. */
+export async function readFileChunk(_: IpcMainInvokeEvent, path: string, offset: number, length: number): Promise<Uint8Array | null> {
+    if (!isPathAllowed(path)) return null;
+
+    let handle;
+    try {
+        handle = await open(path, "r");
+        const buffer = Buffer.alloc(length);
+        const { bytesRead } = await handle.read(buffer, 0, length, offset);
+        return bytesRead === length ? buffer : buffer.subarray(0, bytesRead);
+    } catch {
+        return null;
+    } finally {
+        await handle?.close().catch(() => { });
+    }
+}
+
+// #endregion
+
 export async function stopServer(_: IpcMainInvokeEvent) {
     releaseMediaKeys();
 
@@ -1145,6 +1405,9 @@ export async function stopServer(_: IpcMainInvokeEvent) {
     for (const proc of processes.values()) killProcess(proc);
     processes.clear();
     jobs.clear();
+
+    // half-written listen-along transfers can never be completed now
+    for (const id of [...cacheTransfers.keys()]) await abortTransfer(id);
 
     // the exported cookie jar is only ever needed while yt-dlp runs
     unlink(cookieFilePath()).catch(() => { });

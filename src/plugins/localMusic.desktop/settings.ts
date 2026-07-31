@@ -65,6 +65,31 @@ export const settings = definePluginSettings({
         default: "-x --audio-format mp3 --embed-metadata --embed-thumbnail",
         placeholder: "-x --audio-format mp3"
     },
+    listenAlongAllowPlayback: {
+        type: OptionType.BOOLEAN,
+        description: "Listen along: let newly joined listeners control playback (slider, play/pause, skip) by default",
+        default: true
+    },
+    listenAlongAllowAddToQueue: {
+        type: OptionType.BOOLEAN,
+        description: "Listen along: let newly joined listeners add tracks to the queue by default",
+        default: true
+    },
+    listenAlongAllowReorderQueue: {
+        type: OptionType.BOOLEAN,
+        description: "Listen along: let newly joined listeners reorder and remove queued tracks by default",
+        default: false
+    },
+    listenAlongCacheLimit: {
+        type: OptionType.SELECT,
+        description: "Listen along: how much disk space received tracks may take up before the oldest are evicted",
+        options: [
+            { label: "512 MB", value: 512 * 1024 * 1024 },
+            { label: "2 GB", value: 2 * 1024 * 1024 * 1024, default: true },
+            { label: "8 GB", value: 8 * 1024 * 1024 * 1024 },
+            { label: "Unlimited", value: 0 }
+        ]
+    },
     cookiesFromBrowser: {
         type: OptionType.SELECT,
         description: "Read cookies from this browser instead of the Browse… window's own sign-in. Only needed if you'd rather not sign in there",

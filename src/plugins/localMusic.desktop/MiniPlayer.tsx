@@ -15,6 +15,8 @@ import {
     MAX_VIDEO_HEIGHT, MAX_VIDEO_WIDTH, MIN_VIDEO_HEIGHT, MIN_VIDEO_WIDTH,
     store, usePlayer, usePlayerPosition
 } from "./PlayerStore";
+import { sessionStore, useSession } from "./session/SessionStore";
+import { SyncingBanner } from "./session/SessionUI";
 import { settings } from "./settings";
 
 export const cl = classNameFactory("vc-lm-");
@@ -65,7 +67,9 @@ export const PATHS = {
     queue: "M4 10h9c.55 0 1-.45 1-1s-.45-1-1-1H4c-.55 0-1 .45-1 1s.45 1 1 1zm0-4h9c.55 0 1-.45 1-1s-.45-1-1-1H4c-.55 0-1 .45-1 1s.45 1 1 1zm0 8h5c.55 0 1-.45 1-1s-.45-1-1-1H4c-.55 0-1 .45-1 1s.45 1 1 1zm12-9v7.55c-.42-.34-.94-.55-1.5-.55-1.38 0-2.5 1.12-2.5 2.5s1.12 2.5 2.5 2.5 2.5-1.12 2.5-2.5V7h2c.55 0 1-.45 1-1s-.45-1-1-1h-2c-.55 0-1 .45-1 1V5z",
     // "drag_indicator": the six-dot grip on a reorderable row
     drag: "M9 20c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm0-6c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm0-6c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm6 0c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm0 6c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm0 6c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z",
-    close: "M18.3 5.71c-.39-.39-1.02-.39-1.41 0L12 10.59 7.11 5.7c-.39-.39-1.02-.39-1.41 0-.39.39-.39 1.02 0 1.41L10.59 12 5.7 16.89c-.39.39-.39 1.02 0 1.41.39.39 1.02.39 1.41 0L12 13.41l4.89 4.89c.39.39 1.02.39 1.41 0 .39-.39.39-1.02 0-1.41L13.41 12l4.89-4.89c.38-.38.38-1.02 0-1.4z"
+    close: "M18.3 5.71c-.39-.39-1.02-.39-1.41 0L12 10.59 7.11 5.7c-.39-.39-1.02-.39-1.41 0-.39.39-.39 1.02 0 1.41L10.59 12 5.7 16.89c-.39.39-.39 1.02 0 1.41.39.39 1.02.39 1.41 0L12 13.41l4.89 4.89c.39.39 1.02.39 1.41 0 .39-.39.39-1.02 0-1.41L13.41 12l4.89-4.89c.38-.38.38-1.02 0-1.4z",
+    // "group": two heads and shoulders — the listen along session
+    group: "M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V18c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-1.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V18c0 .55.45 1 1 1h4c.55 0 1-.45 1-1v-1.5c0-2.33-4.67-3.5-7-3.5z"
 } as const;
 
 export function ControlButton({ label, onClick, children, className }: {
@@ -629,11 +633,15 @@ function MediaPanel() {
         toggleFullscreen();
     }
 
+    const session = useSession();
+    const isListener = session.role === "listener";
+    const transportLocked = isListener && !session.myPerms.playback;
+
     const track = player.currentTrack;
     const art = track && player.artUrl(track);
     const accent = useArtAccent(art || null);
     const showingVideo = player.hasVideo && showVideo;
-    const queued = player.queueEntries.length;
+    const queued = isListener ? session.sessionQueue.length : player.queueEntries.length;
 
     const width = anchor ? player.videoWidth || anchor.width : 0;
     // falling back to the docked anchor covers a floating panel that was restored
@@ -733,6 +741,21 @@ function MediaPanel() {
                     </ControlButton>
 
                     <ControlButton
+                        label={session.role === "none"
+                            ? "Listen along"
+                            : session.role === "host"
+                                ? `Hosting — ${session.memberCount} listening`
+                                : `Listening along with ${session.hostUsername}`}
+                        className={session.role !== "none" ? cl("button-active") : undefined}
+                        onClick={() => openLibrary("session")}
+                    >
+                        <Icon path={PATHS.group} label="listen along" size={16} />
+                        {session.memberCount > 1 && (
+                            <span className={cl("count-badge")}>{session.memberCount}</span>
+                        )}
+                    </ControlButton>
+
+                    <ControlButton
                         label="Open library"
                         onClick={() => openLibrary()}
                     >
@@ -763,42 +786,58 @@ function MediaPanel() {
                 </div>
             </div>
 
+            <SyncingBanner />
+
             <div className={cl("video-overlay")} onClick={e => e.stopPropagation()}>
                 <ProgressBar className={cl("video-progress")} />
 
                 <div className={cl("controls-row")}>
-                    <ControlButton
-                        label="Shuffle"
-                        className={player.shuffle ? cl("button-active") : undefined}
-                        onClick={() => player.toggleShuffle()}
-                    >
-                        <Icon path={PATHS.shuffle} label="shuffle" size={15} />
-                    </ControlButton>
+                    {!isListener && (
+                        <ControlButton
+                            label="Shuffle"
+                            className={player.shuffle ? cl("button-active") : undefined}
+                            onClick={() => player.toggleShuffle()}
+                        >
+                            <Icon path={PATHS.shuffle} label="shuffle" size={15} />
+                        </ControlButton>
+                    )}
 
-                    <ControlButton label="Previous" onClick={() => player.previous()}>
+                    <ControlButton
+                        label={transportLocked ? "The host hasn't allowed playback control" : "Previous"}
+                        className={transportLocked ? cl("button-locked") : undefined}
+                        onClick={() => player.previous()}
+                    >
                         <Icon path={PATHS.previous} label="previous" size={18} />
                     </ControlButton>
 
                     <ControlButton
-                        label={player.isPlaying ? "Pause" : "Play"}
-                        className={cl("play-button")}
+                        label={transportLocked
+                            ? "The host hasn't allowed playback control"
+                            : player.isPlaying ? "Pause" : "Play"}
+                        className={classes(cl("play-button"), transportLocked && cl("button-locked"))}
                         onClick={() => player.togglePlay()}
                     >
                         <Icon path={player.isPlaying ? PATHS.pause : PATHS.play} label="play/pause" size={18} />
                     </ControlButton>
 
-                    <ControlButton label="Next" onClick={() => player.next()}>
+                    <ControlButton
+                        label={transportLocked ? "The host hasn't allowed playback control" : "Next"}
+                        className={transportLocked ? cl("button-locked") : undefined}
+                        onClick={() => player.next()}
+                    >
                         <Icon path={PATHS.next} label="next" size={18} />
                     </ControlButton>
 
-                    <ControlButton
-                        label={`Repeat: ${player.repeat === "off" ? "off" : player.repeat === "all" ? "all" : "one"}`}
-                        className={player.repeat !== "off" ? cl("button-active") : undefined}
-                        onClick={() => player.cycleRepeat()}
-                    >
-                        <Icon path={PATHS.repeat} label="repeat" size={15} />
-                        {player.repeat === "one" && <span className={cl("repeat-badge")}>1</span>}
-                    </ControlButton>
+                    {!isListener && (
+                        <ControlButton
+                            label={`Repeat: ${player.repeat === "off" ? "off" : player.repeat === "all" ? "all" : "one"}`}
+                            className={player.repeat !== "off" ? cl("button-active") : undefined}
+                            onClick={() => player.cycleRepeat()}
+                        >
+                            <Icon path={PATHS.repeat} label="repeat" size={15} />
+                            {player.repeat === "one" && <span className={cl("repeat-badge")}>1</span>}
+                        </ControlButton>
+                    )}
 
                     <TimeLabel />
 
@@ -827,6 +866,9 @@ function ProgressBar({ className }: { className?: string; }) {
 
     function seekFromPointer(e: React.PointerEvent<HTMLDivElement>) {
         if (!store.duration) return;
+        // a locked listener's scrub would only produce a denial toast per pixel
+        if (sessionStore.role === "listener" && !sessionStore.myPerms.playback) return;
+
         const { left, width } = e.currentTarget.getBoundingClientRect();
         const ratio = Math.max(0, Math.min(1, (e.clientX - left) / width));
         store.seek(ratio * store.duration);
@@ -840,7 +882,9 @@ function ProgressBar({ className }: { className?: string; }) {
                 setScrubbing(true);
                 seekFromPointer(e);
             }}
-            onPointerMove={e => scrubbing && seekFromPointer(e)}
+            // listeners get click-to-seek only: every scrub step would otherwise
+            // become its own request to the host
+            onPointerMove={e => scrubbing && sessionStore.role !== "listener" && seekFromPointer(e)}
             onPointerUp={() => setScrubbing(false)}
             onPointerCancel={() => setScrubbing(false)}
         >

@@ -8,6 +8,7 @@ import * as DataStore from "@api/DataStore";
 import { PluginNative } from "@utils/types";
 import { useEffect, useReducer } from "@webpack/common";
 
+import type { PlayerSessionAdapter } from "./session/SessionStore";
 import { settings, ytDlpOptions } from "./settings";
 import type {
     DownloadJob, QueueItem, SearchResult, SearchSource, ServerInfo, Track, TrackMetadata, YtDlpInfo
@@ -94,11 +95,13 @@ function ensureMedia() {
         audioCtx?.resume().catch(() => { });
         store.syncMediaSession();
         notify();
+        store.session?.onLocalChange("state");
     });
     media.addEventListener("pause", () => {
         store.isPlaying = false;
         store.syncMediaSession();
         notify();
+        store.session?.onLocalChange("state");
     });
     media.addEventListener("ended", () => void store.next(true));
     media.addEventListener("timeupdate", () => {
@@ -232,6 +235,16 @@ class PlayerStore {
     /** accelerators globalShortcut actually took; empty when that mode is off or refused */
     grabbedMediaKeys: string[] = [];
 
+    /**
+     * Installed by the SessionStore while a listen-along session runs. Mutating
+     * methods consult it first: for a listener it forwards the action to the
+     * host instead; for the host it broadcasts what just changed. Null = solo,
+     * and every guard below is inert.
+     */
+    session: PlayerSessionAdapter | null = null;
+    /** what a listener is playing — served from cache, not from the library */
+    sessionNowPlaying: { title: string; artist: string; album: string; isVideo: boolean; } | null = null;
+
     private server: ServerInfo | null = null;
     private events: EventSource | null = null;
     private history: number[] = [];
@@ -251,18 +264,23 @@ class PlayerStore {
     }
 
     get displayTitle() {
+        if (this.sessionNowPlaying) return this.sessionNowPlaying.title;
+
         const track = this.currentTrack;
         if (!track) return "Nothing playing";
         return this.metadata[track.path]?.title || track.fileName;
     }
 
     get displayArtist() {
+        if (this.sessionNowPlaying) return this.sessionNowPlaying.artist;
+
         const track = this.currentTrack;
         return track ? this.metadata[track.path]?.artist ?? "" : "";
     }
 
     /** true when a video file is loaded and actually has a picture to show */
     get hasVideo() {
+        if (this.sessionNowPlaying) return this.sessionNowPlaying.isVideo;
         return !!this.currentTrack?.isVideo;
     }
 
@@ -336,8 +354,13 @@ class PlayerStore {
     }
 
     mediaUrl(track: Track) {
+        return this.fileUrl(track.path);
+    }
+
+    /** /media URL for any path the native side allows — library or session cache. */
+    fileUrl(path: string) {
         if (!this.server) return "";
-        return `http://127.0.0.1:${this.server.port}/media?t=${this.server.token}&p=${encodeURIComponent(track.path)}`;
+        return `http://127.0.0.1:${this.server.port}/media?t=${this.server.token}&p=${encodeURIComponent(path)}`;
     }
 
     artUrl(track: Track) {
@@ -353,20 +376,20 @@ class PlayerStore {
         if (!session || settings.store.mediaKeys === "off") return;
 
         const track = this.currentTrack;
-        if (!track) {
+        if (!track && !this.sessionNowPlaying) {
             session.metadata = null;
             session.playbackState = "none";
             return;
         }
 
-        const meta = this.metadata[track.path];
-        const art = this.artUrl(track);
+        const meta = track ? this.metadata[track.path] : undefined;
+        const art = track ? this.artUrl(track) : null;
 
         try {
             session.metadata = new MediaMetadata({
-                title: meta?.title || track.fileName,
-                artist: meta?.artist || "",
-                album: meta?.album || "",
+                title: this.sessionNowPlaying?.title ?? (meta?.title || track!.fileName),
+                artist: this.sessionNowPlaying?.artist ?? (meta?.artist || ""),
+                album: this.sessionNowPlaying?.album ?? (meta?.album || ""),
                 artwork: art ? [{ src: art }] : []
             });
         } catch { }
@@ -484,6 +507,8 @@ class PlayerStore {
         } finally {
             this.isScanning = false;
             notify();
+            // a hosted session shares the library — its mirror needs the rescan too
+            this.session?.onLocalChange("library");
         }
     }
 
@@ -500,7 +525,16 @@ class PlayerStore {
         }
     }
 
+    /** Installed and removed by the SessionStore; solo behavior needs it null. */
+    setSession(adapter: PlayerSessionAdapter | null) {
+        this.session = adapter;
+        notify();
+    }
+
     async load(index: number, autoplay = true) {
+        // a listener has no meaningful local library indexes mid-session
+        if (this.session?.role === "listener") return;
+
         const track = this.tracks[index];
         if (!track) return;
 
@@ -535,9 +569,53 @@ class PlayerStore {
         this.syncMediaSession();
         this.savePrefs();
         notify();
+        this.session?.onLocalChange("state");
+    }
+
+    /**
+     * Session playback: points the media element at a served file (the listen
+     * along cache) without touching currentIndex, history or saved prefs —
+     * lastPath must never become a cache path. Loads paused; the sync engine
+     * decides when playback actually starts.
+     */
+    loadExternal(url: string, meta: { title: string; artist: string; album: string; isVideo: boolean; }) {
+        const element = ensureMedia();
+
+        this.sessionNowPlaying = meta;
+        this.currentIndex = -1;
+        this.position = 0;
+        this.duration = 0;
+        this.error = null;
+
+        element.src = url;
+        element.volume = this.volume;
+        element.playbackRate = 1;
+
+        this.syncMediaSession();
+        notify();
+    }
+
+    /** Back to solo: drop the session track and leave the element empty. */
+    clearExternal() {
+        if (!this.sessionNowPlaying) return;
+        this.sessionNowPlaying = null;
+
+        const element = ensureMedia();
+        element.pause();
+        element.removeAttribute("src");
+        element.load();
+        element.playbackRate = 1;
+
+        this.position = 0;
+        this.duration = 0;
+        this.isPlaying = false;
+        this.syncMediaSession();
+        notify();
     }
 
     async play() {
+        if (this.session?.intercept("play")) return;
+
         if (this.currentIndex === -1) {
             if (this.tracks.length) await this.load(0);
             return;
@@ -552,6 +630,8 @@ class PlayerStore {
     }
 
     pause() {
+        if (this.session?.intercept("pause")) return;
+
         ensureMedia().pause();
     }
 
@@ -599,11 +679,14 @@ class PlayerStore {
     }
 
     removeFromQueue(id: string) {
+        if (this.session?.intercept("queue-remove", { qid: id })) return;
+
         this.queue = this.queue.filter(item => item.id !== id);
         this.saveQueue();
     }
 
     clearQueue() {
+        if (this.session?.intercept("queue-clear")) return;
         if (!this.queue.length) return;
 
         this.queue = [];
@@ -618,6 +701,7 @@ class PlayerStore {
      * @param beforeId null to drop it at the very end
      */
     moveInQueue(id: string, beforeId: string | null) {
+        if (this.session?.intercept("queue-move", { qid: id, beforeQid: beforeId })) return;
         if (id === beforeId) return;
 
         const from = this.queue.findIndex(item => item.id === id);
@@ -635,6 +719,8 @@ class PlayerStore {
 
     /** Plays a queued entry right now, taking it out of the queue on the way. */
     async playQueued(id: string) {
+        if (this.session?.intercept("queue-play", { qid: id })) return;
+
         const item = this.queue.find(entry => entry.id === id);
         if (!item) return;
 
@@ -667,6 +753,7 @@ class PlayerStore {
     private saveQueue() {
         this.savePrefs();
         notify();
+        this.session?.onLocalChange("queue");
     }
 
     // #endregion
@@ -690,6 +777,15 @@ class PlayerStore {
 
     /** @param automatic true when triggered by a track ending rather than the user */
     async next(automatic = false) {
+        // a listener's track running out means nothing — the host's broadcast
+        // decides what plays next, so just sit quietly until it arrives
+        if (automatic && this.session?.role === "listener") {
+            this.isPlaying = false;
+            notify();
+            return;
+        }
+        if (this.session?.intercept("next")) return;
+
         // repeat-one outranks even the queue: it is the one mode that means "do not
         // move on", and the queue is still there whenever it gets turned off
         if (this.repeat === "one" && this.currentIndex !== -1) {
@@ -718,6 +814,8 @@ class PlayerStore {
     }
 
     async previous(restartThresholdSeconds = 3) {
+        if (this.session?.intercept("previous")) return;
+
         const element = ensureMedia();
 
         // matches every other music player: rewind first, skip back only if near the start
@@ -740,13 +838,33 @@ class PlayerStore {
     }
 
     seek(seconds: number) {
+        if (this.session?.intercept("seek", { seconds })) return;
+
         const element = ensureMedia();
         if (Number.isFinite(element.duration)) {
             element.currentTime = Math.max(0, Math.min(seconds, element.duration));
             this.position = element.currentTime;
             this.syncPositionState(true);
             positionListeners.forEach(l => l());
+            this.session?.onLocalChange("state");
         }
+    }
+
+    /**
+     * The sync engine's own seek: skips the session guard (it *is* the session)
+     * and the state broadcast — only the host broadcasts, and the host never
+     * calls this.
+     */
+    hardSeekSilently(seconds: number) {
+        const element = ensureMedia();
+        if (Number.isFinite(element.duration) && element.duration > 0) {
+            element.currentTime = Math.max(0, Math.min(seconds, element.duration));
+            this.position = element.currentTime;
+        }
+    }
+
+    setPlaybackRate(rate: number) {
+        ensureMedia().playbackRate = rate;
     }
 
     /** what unmuting restores; only ever a volume the user actually had set */
@@ -765,12 +883,16 @@ class PlayerStore {
     }
 
     toggleShuffle() {
+        if (this.session?.role === "listener") return;
+
         this.shuffle = !this.shuffle;
         this.savePrefs();
         notify();
     }
 
     cycleRepeat() {
+        if (this.session?.role === "listener") return;
+
         this.repeat = this.repeat === "off" ? "all" : this.repeat === "all" ? "one" : "off";
         this.savePrefs();
         notify();
@@ -913,6 +1035,8 @@ class PlayerStore {
             navigator.mediaSession.playbackState = "none";
         }
 
+        this.session = null;
+        this.sessionNowPlaying = null;
         this.isPlaying = false;
         this.currentIndex = -1;
         this.tracks = [];
