@@ -9,7 +9,9 @@ import { PluginNative } from "@utils/types";
 import { useEffect, useReducer } from "@webpack/common";
 
 import { settings, ytDlpOptions } from "./settings";
-import type { DownloadJob, SearchResult, SearchSource, ServerInfo, Track, TrackMetadata, YtDlpInfo } from "./types";
+import type {
+    DownloadJob, QueueItem, SearchResult, SearchSource, ServerInfo, Track, TrackMetadata, YtDlpInfo
+} from "./types";
 
 const Native = VencordNative.pluginHelpers.LocalMusic as PluginNative<typeof import("./native")>;
 
@@ -23,6 +25,16 @@ export const MAX_VIDEO_HEIGHT = 720;
 export const MIN_VIDEO_WIDTH = 180;
 export const MAX_VIDEO_WIDTH = 1600;
 
+/**
+ * Where a popped-out panel sits inside the Discord window. Measured from the
+ * bottom rather than the top because the panel grows upwards when resized,
+ * exactly as it does while docked.
+ */
+export interface FloatAnchor {
+    left: number;
+    bottom: number;
+}
+
 interface Prefs {
     volume: number;
     shuffle: boolean;
@@ -31,6 +43,11 @@ interface Prefs {
     videoHeight: number;
     /** pixels, or 0 to just fill the panel it is docked above */
     videoWidth: number;
+    floating: boolean;
+    /** null until the panel has been popped out for the first time */
+    floatAnchor: FloatAnchor | null;
+    /** the "play next" queue as bare paths; the ids are minted again on load */
+    queue: string[];
 }
 
 const DEFAULT_PREFS: Prefs = {
@@ -39,7 +56,10 @@ const DEFAULT_PREFS: Prefs = {
     repeat: "off",
     lastPath: null,
     videoHeight: 200,
-    videoWidth: 0
+    videoWidth: 0,
+    floating: false,
+    floatAnchor: null,
+    queue: []
 };
 
 const stateListeners = new Set<() => void>();
@@ -62,11 +82,16 @@ function ensureMedia() {
 
     media = document.createElement("video");
     media.preload = "metadata";
+    // the loopback server is another origin; without clean CORS the analyser
+    // behind the visualizer would read nothing but silence
+    media.crossOrigin = "anonymous";
     media.volume = store.volume;
     mediaHost.appendChild(media);
 
     media.addEventListener("play", () => {
         store.isPlaying = true;
+        // the context starts suspended when it was created while nothing played
+        audioCtx?.resume().catch(() => { });
         store.syncMediaSession();
         notify();
     });
@@ -93,6 +118,40 @@ function ensureMedia() {
     });
 
     return media;
+}
+
+/**
+ * Pass-through analyser tap for the visualizer. Built lazily on first use and
+ * kept for the life of the media element: createMediaElementSource permanently
+ * reroutes the element's audio through the graph, so tearing the graph down
+ * while the element lives would mute it.
+ */
+let audioCtx: AudioContext | null = null;
+let analyser: AnalyserNode | null = null;
+
+function ensureAnalyser(): AnalyserNode | null {
+    if (analyser) return analyser;
+
+    const element = ensureMedia();
+
+    try {
+        audioCtx = new AudioContext();
+        const source = audioCtx.createMediaElementSource(element);
+        analyser = audioCtx.createAnalyser();
+        analyser.fftSize = 1024;
+        analyser.smoothingTimeConstant = 0.75;
+        source.connect(analyser);
+        analyser.connect(audioCtx.destination);
+
+        if (!element.paused) audioCtx.resume().catch(() => { });
+    } catch (e) {
+        console.error("[LocalMusic] could not build the audio analyser:", e);
+        audioCtx?.close().catch(() => { });
+        audioCtx = null;
+        analyser = null;
+    }
+
+    return analyser;
 }
 
 function notify() {
@@ -161,10 +220,13 @@ class PlayerStore {
     repeat: RepeatMode = DEFAULT_PREFS.repeat;
 
     isScanning = false;
-    /** whether the player panel should be shown above the account panel */
-    videoDocked = true;
     videoHeight = DEFAULT_PREFS.videoHeight;
     videoWidth = DEFAULT_PREFS.videoWidth;
+    floating = DEFAULT_PREFS.floating;
+    floatAnchor: FloatAnchor | null = DEFAULT_PREFS.floatAnchor;
+
+    /** what plays next, ahead of whatever the library order or shuffle would pick */
+    queue: QueueItem[] = [];
 
     downloads: DownloadJob[] = [];
     /** accelerators globalShortcut actually took; empty when that mode is off or refused */
@@ -175,6 +237,9 @@ class PlayerStore {
     private history: number[] = [];
     private finishedDownloads = new Set<string>();
     private lastPositionSync = 0;
+    /** path -> index in tracks, so resolving a queue entry isn't a scan of the library */
+    private indexByPath = new Map<string, number>();
+    private queueSeq = 0;
 
     get currentTrack(): Track | null {
         return this.tracks[this.currentIndex] ?? null;
@@ -205,18 +270,28 @@ class PlayerStore {
         return ensureMedia();
     }
 
+    /** null when the Web Audio graph could not be built; the visualizer just idles */
+    getAnalyser() {
+        return ensureAnalyser();
+    }
+
     async init() {
         const [folder, prefs] = await Promise.all([
             DataStore.get<string>(FOLDER_KEY),
             DataStore.get<Prefs>(PREFS_KEY)
         ]);
 
-        const { volume, shuffle, repeat, lastPath, videoHeight, videoWidth } = { ...DEFAULT_PREFS, ...prefs };
+        const {
+            volume, shuffle, repeat, lastPath, videoHeight, videoWidth, floating, floatAnchor, queue
+        } = { ...DEFAULT_PREFS, ...prefs };
         this.volume = volume;
         this.shuffle = shuffle;
         this.repeat = repeat;
         this.videoHeight = videoHeight;
         this.videoWidth = videoWidth;
+        this.floating = floating;
+        this.floatAnchor = floatAnchor;
+        this.queue = queue.map(path => this.mintQueueItem(path));
         if (media) media.volume = volume;
 
         registerMediaSessionHandlers();
@@ -226,9 +301,9 @@ class PlayerStore {
             await this.rescan();
 
             if (lastPath) {
-                const index = this.tracks.findIndex(t => t.path === lastPath);
+                const index = this.indexByPath.get(lastPath);
                 // restore the selection but don't start playing on its own
-                if (index !== -1) await this.load(index, false);
+                if (index !== undefined) await this.load(index, false);
             }
         }
 
@@ -247,7 +322,10 @@ class PlayerStore {
             repeat: this.repeat,
             lastPath: this.currentTrack?.path ?? null,
             videoHeight: this.videoHeight,
-            videoWidth: this.videoWidth
+            videoWidth: this.videoWidth,
+            floating: this.floating,
+            floatAnchor: this.floatAnchor,
+            queue: this.queue.map(item => item.path)
         } satisfies Prefs);
     }
 
@@ -393,8 +471,11 @@ class PlayerStore {
         try {
             const currentPath = this.currentTrack?.path;
             this.tracks = await Native.scanFolder(this.folder);
+            this.indexByPath = new Map(this.tracks.map((track, index) => [track.path, index]));
             // keep pointing at the same file if it survived the rescan
-            this.currentIndex = currentPath ? this.tracks.findIndex(t => t.path === currentPath) : -1;
+            this.currentIndex = currentPath ? this.indexByPath.get(currentPath) ?? -1 : -1;
+            // a queued file that is no longer on disk can never play, so drop it
+            this.queue = this.queue.filter(item => this.indexByPath.has(item.path));
 
             await this.ensureServer();
             this.loadMetadata();
@@ -479,9 +560,120 @@ class PlayerStore {
         else this.pause();
     }
 
+    // #region queue
+
+    private mintQueueItem(path: string): QueueItem {
+        return { id: `q${++this.queueSeq}`, path };
+    }
+
+    /**
+     * The queue paired up with the tracks it points at, in queue order. Entries the
+     * library no longer has are skipped rather than rendered as unplayable rows.
+     */
+    get queueEntries(): { item: QueueItem; track: Track; index: number; }[] {
+        const entries: { item: QueueItem; track: Track; index: number; }[] = [];
+
+        for (const item of this.queue) {
+            const index = this.indexByPath.get(item.path);
+            if (index !== undefined) entries.push({ item, track: this.tracks[index], index });
+        }
+
+        return entries;
+    }
+
+    /** Jumps a track to the front of the queue, so it plays as soon as this one ends. */
+    playNext(index: number) {
+        const track = this.tracks[index];
+        if (!track) return;
+
+        this.queue = [this.mintQueueItem(track.path), ...this.queue];
+        this.saveQueue();
+    }
+
+    addToQueue(index: number) {
+        const track = this.tracks[index];
+        if (!track) return;
+
+        this.queue = [...this.queue, this.mintQueueItem(track.path)];
+        this.saveQueue();
+    }
+
+    removeFromQueue(id: string) {
+        this.queue = this.queue.filter(item => item.id !== id);
+        this.saveQueue();
+    }
+
+    clearQueue() {
+        if (!this.queue.length) return;
+
+        this.queue = [];
+        this.saveQueue();
+    }
+
+    /**
+     * Drag-to-reorder. Expressed against the id it lands in front of rather than a
+     * numeric slot, so it stays right even when the list being dragged has skipped
+     * entries the library lost.
+     *
+     * @param beforeId null to drop it at the very end
+     */
+    moveInQueue(id: string, beforeId: string | null) {
+        if (id === beforeId) return;
+
+        const from = this.queue.findIndex(item => item.id === id);
+        if (from === -1) return;
+
+        const next = [...this.queue];
+        const [item] = next.splice(from, 1);
+
+        const to = beforeId === null ? -1 : next.findIndex(entry => entry.id === beforeId);
+        next.splice(to === -1 ? next.length : to, 0, item);
+
+        this.queue = next;
+        this.saveQueue();
+    }
+
+    /** Plays a queued entry right now, taking it out of the queue on the way. */
+    async playQueued(id: string) {
+        const item = this.queue.find(entry => entry.id === id);
+        if (!item) return;
+
+        const index = this.indexByPath.get(item.path);
+        this.removeFromQueue(id);
+        if (index !== undefined) await this.load(index);
+    }
+
+    /**
+     * Pops the front of the queue, discarding entries whose file has since gone.
+     * Returns null when there is nothing queued left to play.
+     */
+    private takeFromQueue(): number | null {
+        let index: number | undefined;
+        let took = false;
+
+        while (this.queue.length) {
+            const [item, ...rest] = this.queue;
+            this.queue = rest;
+            took = true;
+
+            index = this.indexByPath.get(item.path);
+            if (index !== undefined) break;
+        }
+
+        if (took) this.saveQueue();
+        return index ?? null;
+    }
+
+    private saveQueue() {
+        this.savePrefs();
+        notify();
+    }
+
+    // #endregion
+
+    /** Where playback would go on its own, once the queue has had its say. */
     private pickNextIndex(): number | null {
         if (!this.tracks.length) return null;
-        if (this.repeat === "one") return this.currentIndex;
 
         if (this.shuffle) {
             if (this.tracks.length === 1) return 0;
@@ -498,19 +690,27 @@ class PlayerStore {
 
     /** @param automatic true when triggered by a track ending rather than the user */
     async next(automatic = false) {
-        const index = this.pickNextIndex();
+        // repeat-one outranks even the queue: it is the one mode that means "do not
+        // move on", and the queue is still there whenever it gets turned off
+        if (this.repeat === "one" && this.currentIndex !== -1) {
+            // a natural end should restart rather than reload
+            if (automatic) {
+                const element = ensureMedia();
+                element.currentTime = 0;
+                await element.play().catch(() => { });
+                return;
+            }
+
+            await this.load(this.currentIndex);
+            return;
+        }
+
+        const queued = this.takeFromQueue();
+        const index = queued ?? this.pickNextIndex();
 
         if (index === null) {
             this.isPlaying = false;
             notify();
-            return;
-        }
-
-        // repeat-one on a natural end should restart rather than reload
-        if (automatic && this.repeat === "one") {
-            const element = ensureMedia();
-            element.currentTime = 0;
-            await element.play().catch(() => { });
             return;
         }
 
@@ -549,11 +749,19 @@ class PlayerStore {
         }
     }
 
+    /** what unmuting restores; only ever a volume the user actually had set */
+    private lastVolume = DEFAULT_PREFS.volume;
+
     setVolume(volume: number) {
         this.volume = Math.max(0, Math.min(1, volume));
+        if (this.volume > 0) this.lastVolume = this.volume;
         ensureMedia().volume = this.volume;
         this.savePrefs();
         notify();
+    }
+
+    toggleMute() {
+        this.setVolume(this.volume > 0 ? 0 : this.lastVolume);
     }
 
     toggleShuffle() {
@@ -568,11 +776,6 @@ class PlayerStore {
         notify();
     }
 
-    toggleVideoDock() {
-        this.videoDocked = !this.videoDocked;
-        notify();
-    }
-
     /** @param width 0 to go back to filling the panel rather than a fixed size */
     setVideoSize(width: number, height: number) {
         this.videoHeight = Math.round(Math.max(MIN_VIDEO_HEIGHT, Math.min(MAX_VIDEO_HEIGHT, height)));
@@ -584,10 +787,37 @@ class PlayerStore {
         notify();
     }
 
+    /**
+     * Pops the panel out of the sidebar, or puts it back. Nothing about the panel
+     * itself changes — it already renders into a portal on document.body — only
+     * what it is pinned to: a free window-relative anchor rather than the rect of
+     * the spacer it left behind in the account panel.
+     *
+     * @param anchor where to start floating from, so popping out doesn't jump
+     */
+    setFloating(floating: boolean, anchor?: FloatAnchor) {
+        this.floating = floating;
+        if (floating && anchor) this.floatAnchor = anchor;
+
+        this.savePrefs();
+        notify();
+    }
+
+    setFloatAnchor(anchor: FloatAnchor) {
+        this.floatAnchor = anchor;
+        this.savePrefs();
+        notify();
+    }
+
     // #region downloads
 
     ytDlpInfo(): Promise<YtDlpInfo> {
         return Native.ytDlpInfo(ytDlpOptions(this.folder ?? ""));
+    }
+
+    /** whether the browse window's session is signed in to YouTube */
+    browserLogin(): Promise<boolean> {
+        return Native.getBrowserLogin();
     }
 
     search(query: string, source: SearchSource, limit = 25): Promise<SearchResult[]> {
@@ -673,6 +903,11 @@ class PlayerStore {
         media = null;
         mediaHost = null;
 
+        // the graph is bound to the element that just went away
+        audioCtx?.close().catch(() => { });
+        audioCtx = null;
+        analyser = null;
+
         if (navigator.mediaSession) {
             navigator.mediaSession.metadata = null;
             navigator.mediaSession.playbackState = "none";
@@ -681,6 +916,9 @@ class PlayerStore {
         this.isPlaying = false;
         this.currentIndex = -1;
         this.tracks = [];
+        this.indexByPath.clear();
+        // left in prefs on purpose — the queue comes back with the plugin
+        this.queue = [];
         this.downloads = [];
         stateListeners.clear();
         positionListeners.clear();

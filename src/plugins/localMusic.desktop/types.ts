@@ -14,6 +14,16 @@ export interface Track {
     isVideo: boolean;
 }
 
+/**
+ * One slot in the "play next" queue. Carries an id rather than just a path so the
+ * same track can be queued twice and still be told apart by a drag or a remove.
+ */
+export interface QueueItem {
+    id: string;
+    /** the Track.path this slot points at */
+    path: string;
+}
+
 export interface TrackMetadata {
     title?: string;
     artist?: string;

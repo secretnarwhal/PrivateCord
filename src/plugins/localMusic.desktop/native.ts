@@ -8,9 +8,9 @@ import { CspPolicies, CssSrc, ImageAndMediaSrc, ImageSrc } from "@main/csp";
 import { RendererSettings } from "@main/settings";
 import { ChildProcess, spawn } from "child_process";
 import { randomBytes, timingSafeEqual } from "crypto";
-import { app, BrowserWindow, dialog, globalShortcut, IpcMainInvokeEvent } from "electron";
+import { app, BrowserWindow, dialog, globalShortcut, IpcMainInvokeEvent, session } from "electron";
 import { createReadStream, Dirent, existsSync } from "fs";
-import { readdir, stat } from "fs/promises";
+import { readdir, stat, unlink, writeFile } from "fs/promises";
 import { createServer, IncomingMessage, Server, ServerResponse } from "http";
 import { AddressInfo } from "net";
 import { basename, extname, join, resolve, sep } from "path";
@@ -28,13 +28,21 @@ CspPolicies["i.ytimg.com"] = ImageSrc;
 CspPolicies["lh3.googleusercontent.com"] = ImageSrc;
 
 /**
- * Chromium only publishes an MPRIS interface - which is how Linux desktops route
- * the media keys and draw their "now playing" widget - when MediaSessionService is
- * enabled. It is on by default on Windows and macOS but not on Linux, and Chromium
- * only reads feature switches before the app is ready, so this has to run at import
- * time rather than when the plugin starts.
+ * Media keys and the OS "now playing" widget hang off two Chromium features:
+ * MediaSessionService (the media session backend — SMTC on Windows, MPRIS on
+ * Linux, Now Playing on macOS) and HardwareMediaKeyHandling (routing the
+ * physical keys to it). Electron enables both by default on Windows and macOS,
+ * but Discord's bootstrap passes both to --disable-features on every platform —
+ * which is why stock Discord never reacts to media keys — and on Linux Electron
+ * ships with them off in the first place.
+ *
+ * Chromium only reads feature switches before the app is ready, and Discord's
+ * bootstrap runs *after* plugin natives are imported, so this has to happen at
+ * import time — and Discord's disable has to be intercepted, not just undone.
  */
-if (process.platform === "linux" && RendererSettings.store.plugins?.LocalMusic?.enabled) {
+const MEDIA_FEATURES = ["MediaSessionService", "HardwareMediaKeyHandling"];
+
+if (RendererSettings.store.plugins?.LocalMusic?.enabled) {
     if (app.isReady()) {
         console.warn(
             "[LocalMusic] the app was already ready, so MediaSessionService could not be enabled. " +
@@ -42,9 +50,33 @@ if (process.platform === "linux" && RendererSettings.store.plugins?.LocalMusic?.
             "--enable-features=MediaSessionService,HardwareMediaKeyHandling"
         );
     } else {
-        const wanted = ["MediaSessionService", "HardwareMediaKeyHandling"];
-        const existing = app.commandLine.getSwitchValue("enable-features").split(",").filter(Boolean);
-        app.commandLine.appendSwitch("enable-features", [...new Set([...existing, ...wanted])].join(","));
+        const scrub = (value: string) =>
+            value.split(",").filter(f => !MEDIA_FEATURES.includes(f.trim())).join(",");
+
+        // anything already on the command line (a host can pass --disable-features itself)
+        const preDisabled = app.commandLine.getSwitchValue("disable-features");
+        if (preDisabled) {
+            app.commandLine.removeSwitch("disable-features");
+            app.commandLine.appendSwitch("disable-features", scrub(preDisabled));
+        }
+
+        const withMediaFeatures = (value: string) =>
+            [...new Set([...value.split(",").filter(Boolean), ...MEDIA_FEATURES])].join(",");
+
+        // Discord's own disable arrives later, when its bootstrap runs. And since
+        // Chromium honours only the *last* occurrence of a switch, a later
+        // enable-features append would silently drop ours — fold ours into it.
+        const originalAppend = app.commandLine.appendSwitch.bind(app.commandLine);
+        app.commandLine.appendSwitch = (key: string, value?: string) => {
+            if (key === "disable-features" && value) value = scrub(value);
+            if (key === "enable-features") value = withMediaFeatures(value ?? "");
+            return originalAppend(key, value as string);
+        };
+
+        app.commandLine.appendSwitch(
+            "enable-features",
+            app.commandLine.getSwitchValue("enable-features")
+        );
     }
 }
 
@@ -137,6 +169,14 @@ function broadcast(event: string, data: unknown) {
 
 // #endregion
 
+/**
+ * The renderer's media element uses crossorigin="anonymous" so the Web Audio
+ * analyser behind the visualizer can read samples (a non-CORS element plays but
+ * analyses as silence). That makes every media request a CORS request, which
+ * fails outright without this header. The token is what actually gates access.
+ */
+const CORS_HEADER = { "Access-Control-Allow-Origin": "*" };
+
 async function handleMedia(path: string, range: string | undefined, res: ServerResponse) {
     const { size } = await stat(path);
     const contentType = MIME_TYPES[extname(path).toLowerCase()] ?? "application/octet-stream";
@@ -153,6 +193,7 @@ async function handleMedia(path: string, range: string | undefined, res: ServerR
         }
 
         res.writeHead(206, {
+            ...CORS_HEADER,
             "Content-Type": contentType,
             "Content-Length": end - start + 1,
             "Content-Range": `bytes ${start}-${end}/${size}`,
@@ -163,6 +204,7 @@ async function handleMedia(path: string, range: string | undefined, res: ServerR
     }
 
     res.writeHead(200, {
+        ...CORS_HEADER,
         "Content-Type": contentType,
         "Content-Length": size,
         "Accept-Ranges": "bytes",
@@ -179,6 +221,7 @@ async function handleArt(path: string, res: ServerResponse) {
     }
 
     res.writeHead(200, {
+        ...CORS_HEADER,
         "Content-Type": picture.mime,
         "Content-Length": picture.data.length,
         "Cache-Control": "no-store"
@@ -438,10 +481,88 @@ function splitArgs(input: string): string[] {
     return out;
 }
 
-function baseArgs(opts: YtDlpOptions) {
-    const args = ["--no-warnings"];
-    if (opts.cookiesFromBrowser) args.push("--cookies-from-browser", opts.cookiesFromBrowser);
-    return args;
+// #region cookies
+
+/** The browse window's session — signing in there is what makes these cookies exist. */
+const BROWSER_PARTITION = "persist:vc-localmusic";
+
+/** Only what YouTube needs; nothing else in the jar ever reaches yt-dlp. */
+const COOKIE_DOMAINS = /(^|\.)(youtube\.com|youtu\.be|google\.com|googlevideo\.com)$/i;
+
+function isLoginCookie(name: string) {
+    return name === "SAPISID" || name === "__Secure-3PAPISID";
+}
+
+function cookieFilePath() {
+    return join(app.getPath("userData"), "vc-localmusic-cookies.txt");
+}
+
+/** Lets the UI say whether Liked Music is reachable before anyone tries. */
+export async function getBrowserLogin(_: IpcMainInvokeEvent): Promise<boolean> {
+    try {
+        const cookies = await session.fromPartition(BROWSER_PARTITION).cookies.get({ domain: "youtube.com" });
+        return cookies.some(c => isLoginCookie(c.name));
+    } catch {
+        return false;
+    }
+}
+
+let cookieExport: Promise<string | null> | null = null;
+
+/**
+ * Writes the browse window's YouTube cookies out as a Netscape cookies.txt for
+ * yt-dlp's --cookies. Signing in once in the Browse… window is therefore enough to
+ * reach Liked Music and private playlists — no --cookies-from-browser, which can't
+ * read Chrome's cookie DB on Windows anymore and needs the keyring on Linux.
+ *
+ * Re-exported before every invocation (a fresh sign-in must be picked up), but
+ * concurrent invocations share one export rather than racing over the file.
+ */
+function exportSessionCookies(): Promise<string | null> {
+    cookieExport ??= (async () => {
+        const cookies = await session.fromPartition(BROWSER_PARTITION).cookies.get({});
+        const relevant = cookies.filter(c => COOKIE_DOMAINS.test((c.domain ?? "").replace(/^\./, "")));
+
+        // anonymous cookies do nothing for yt-dlp, so don't bother passing them
+        if (!relevant.some(c => isLoginCookie(c.name))) return null;
+
+        const lines = relevant.map(c => [
+            c.domain ?? "",
+            c.domain?.startsWith(".") ? "TRUE" : "FALSE",
+            c.path ?? "/",
+            c.secure ? "TRUE" : "FALSE",
+            // 0 marks a session cookie in the Netscape format
+            Math.floor(c.expirationDate ?? 0),
+            c.name,
+            c.value
+        ].join("\t"));
+
+        const file = cookieFilePath();
+        await writeFile(file, "# Netscape HTTP Cookie File\n" + lines.join("\n") + "\n", "utf8");
+        return file;
+    })().finally(() => { cookieExport = null; });
+
+    return cookieExport;
+}
+
+// #endregion
+
+/**
+ * The exported browse-window cookies win whenever they exist: a file we wrote
+ * ourselves always reads, while --cookies-from-browser fails outright on locked
+ * or encrypted cookie DBs — which is every Chrome-family browser on Windows now.
+ * The setting stays as the fallback for people signed in elsewhere.
+ */
+async function cookieArgs(opts: YtDlpOptions): Promise<string[]> {
+    const file = await exportSessionCookies().catch(() => null);
+    if (file) return ["--cookies", file];
+    if (opts.cookiesFromBrowser) return ["--cookies-from-browser", opts.cookiesFromBrowser];
+    return [];
+}
+
+/** A fatal cookie complaint — the run can still succeed without cookies. */
+function isCookieError(message: string) {
+    return message.startsWith("ERROR:") && /cookie/i.test(message);
 }
 
 /** Downloads must land inside a folder the user opened, same rule as the file server. */
@@ -531,8 +652,9 @@ export async function search(
     // the ytsearchN: prefix also guarantees the argument can't start with a dash
     else target = `ytsearch${limit}:${trimmed}`;
 
-    const args = [
-        ...baseArgs(opts),
+    const buildArgs = (cookies: string[]) => [
+        "--no-warnings",
+        ...cookies,
         "--flat-playlist",
         "--dump-json",
         "--ignore-errors",
@@ -540,7 +662,17 @@ export async function search(
         target
     ];
 
-    const stdout = await collect(resolveBinary(opts), args, 60_000);
+    const binary = resolveBinary(opts);
+    const cookies = await cookieArgs(opts);
+
+    let stdout: string;
+    try {
+        stdout = await collect(binary, buildArgs(cookies), 60_000);
+    } catch (e) {
+        // an unreadable browser jar shouldn't kill a search that works without it
+        if (cookies[0] !== "--cookies-from-browser" || !(e instanceof Error) || !isCookieError(e.message)) throw e;
+        stdout = await collect(binary, buildArgs([]), 60_000);
+    }
 
     const results: SearchResult[] = [];
     for (const line of stdout.split("\n")) {
@@ -635,7 +767,7 @@ function consumeOutput(job: DownloadJob, text: string) {
     publishJobs();
 }
 
-function beginDownload(url: string, playlist: boolean, opts: YtDlpOptions): DownloadJob {
+async function beginDownload(url: string, playlist: boolean, opts: YtDlpOptions): Promise<DownloadJob> {
     if (!/^https?:\/\//i.test(url)) throw new Error("Only http(s) URLs can be downloaded");
 
     const folder = requireAllowedFolder(opts);
@@ -644,64 +776,84 @@ function beginDownload(url: string, playlist: boolean, opts: YtDlpOptions): Down
     const id = randomBytes(8).toString("hex");
     const job: DownloadJob = { id, url, title: url, percent: -1, status: "running", message: "Starting…" };
     jobs.set(id, job);
+    publishJobs(true);
 
-    const args = [
-        ...baseArgs(opts),
+    const cookies = await cookieArgs(opts);
+
+    const buildArgs = (cookieSet: string[]) => [
+        "--no-warnings",
+        ...cookieSet,
         "--newline", // one progress update per line instead of \r overwrites
-        playlist ? "--yes-playlist" : "--no-playlist",
+        // the archive is what makes re-downloading a whole playlist (Liked Music,
+        // say) incremental: everything already fetched once is skipped. Single
+        // downloads skip it so re-downloading one track on purpose still works.
+        ...(playlist
+            ? ["--yes-playlist", "--download-archive", join(folder, ".vc-localmusic-archive.txt")]
+            : ["--no-playlist"]),
         "--paths", folder,
         ...splitArgs(opts.extraArgs),
         url
     ];
 
-    let proc: ReturnType<typeof run>;
-    try {
-        proc = run(binary, args);
-    } catch (e) {
-        // spawn can also throw synchronously (a bad binary path on Windows, say). The
-        // job is already in the map by now, so it has to be failed here or it would sit
-        // at "Starting…" with nothing left to move it along.
-        job.status = "error";
-        job.message = describeSpawnError(e as NodeJS.ErrnoException, binary);
-        publishJobs(true);
-        return job;
-    }
+    // a jar yt-dlp can't read fails the whole run before it downloads anything,
+    // but the download itself usually works fine with no cookies at all
+    let canRetryWithoutCookies = cookies[0] === "--cookies-from-browser";
 
-    processes.set(id, proc);
-
-    proc.stdout.on("data", chunk => consumeOutput(job, String(chunk)));
-
-    proc.stderr.on("data", chunk => {
-        const lines = String(chunk).split(/\r?\n/).filter(l => l.trim());
-        const failure = lines.reverse().find(l => l.startsWith("ERROR:"));
-        if (failure) job.message = failure;
-        publishJobs();
-    });
-
-    proc.on("error", e => {
-        processes.delete(id);
-        job.status = "error";
-        job.message = describeSpawnError(e, binary);
-        publishJobs(true);
-    });
-
-    proc.on("close", code => {
-        processes.delete(id);
-        if (job.status !== "running") return publishJobs(true); // cancelled
-
-        if (code === 0) {
-            job.status = "done";
-            job.percent = 100;
-            job.message = "Done";
-        } else {
+    const start = (cookieSet: string[]) => {
+        let proc: ReturnType<typeof run>;
+        try {
+            proc = run(binary, buildArgs(cookieSet));
+        } catch (e) {
+            // spawn can also throw synchronously (a bad binary path on Windows, say). The
+            // job is already in the map by now, so it has to be failed here or it would sit
+            // at "Starting…" with nothing left to move it along.
             job.status = "error";
-            if (!job.message.startsWith("ERROR:")) job.message = `yt-dlp exited with code ${code}`;
+            job.message = describeSpawnError(e as NodeJS.ErrnoException, binary);
+            publishJobs(true);
+            return;
         }
 
-        publishJobs(true);
-    });
+        processes.set(id, proc);
 
-    publishJobs(true);
+        proc.stdout.on("data", chunk => consumeOutput(job, String(chunk)));
+
+        proc.stderr.on("data", chunk => {
+            const lines = String(chunk).split(/\r?\n/).filter(l => l.trim());
+            const failure = lines.reverse().find(l => l.startsWith("ERROR:"));
+            if (failure) job.message = failure;
+            publishJobs();
+        });
+
+        proc.on("error", e => {
+            processes.delete(id);
+            job.status = "error";
+            job.message = describeSpawnError(e, binary);
+            publishJobs(true);
+        });
+
+        proc.on("close", code => {
+            processes.delete(id);
+            if (job.status !== "running") return publishJobs(true); // cancelled
+
+            if (code === 0) {
+                job.status = "done";
+                job.percent = 100;
+                job.message = "Done";
+            } else if (canRetryWithoutCookies && isCookieError(job.message)) {
+                canRetryWithoutCookies = false;
+                job.percent = -1;
+                job.message = "Browser cookies were unreadable — retrying without them";
+                start([]);
+            } else {
+                job.status = "error";
+                if (!job.message.startsWith("ERROR:")) job.message = `yt-dlp exited with code ${code}`;
+            }
+
+            publishJobs(true);
+        });
+    };
+
+    start(cookies);
     return job;
 }
 
@@ -772,9 +924,11 @@ export async function clearFinishedDownloads(_: IpcMainInvokeEvent) {
 // #region browser
 
 /**
- * A plain Electron window pointed at YouTube, with one behaviour changed: following
- * a link to a track queues it for download instead of playing it. Navigation stays
- * ordinary everywhere else, so searching, playlists and channels all still browse.
+ * A plain Electron window pointed at YouTube Music. The site itself is left
+ * completely alone — browsing, searching and playback all behave like a normal
+ * browser. Our additions live in the bar along the bottom: "Download playing"
+ * queues whatever the page's player is currently playing, and "Queue this page"
+ * queues the page URL itself (an album, a playlist, a video).
  *
  * The page can't talk to us directly — it has no preload and no node access, which
  * is the point. Instead the injected script navigates to an unresolvable sentinel
@@ -785,23 +939,8 @@ const BROWSER_ORIGIN = "https://vc-localmusic.invalid/";
 const DEFAULT_BROWSE_URL = "https://music.youtube.com/";
 
 let browser: BrowserWindow | null = null;
-/** the download settings the browser was opened with, reused for every queued click */
+/** the download settings the browser was opened with, reused for everything it queues */
 let browseOptions: { playlist: boolean; opts: YtDlpOptions; } | null = null;
-
-/** Whether yt-dlp would treat this as a track, rather than a page worth browsing. */
-function isTrackUrl(raw: string) {
-    try {
-        const url = new URL(raw);
-
-        if (/(^|\.)youtu\.be$/i.test(url.hostname)) return url.pathname.length > 1;
-        if (!/(^|\.)youtube\.com$/i.test(url.hostname)) return false;
-
-        return (url.pathname === "/watch" && url.searchParams.has("v"))
-            || url.pathname.startsWith("/shorts/");
-    } catch {
-        return false;
-    }
-}
 
 function browserToast(text: string, tone: "ok" | "error" = "ok") {
     browser?.webContents
@@ -809,11 +948,11 @@ function browserToast(text: string, tone: "ok" | "error" = "ok") {
         .catch(() => { });
 }
 
-function enqueueFromBrowser(url: string) {
+async function enqueueFromBrowser(url: string) {
     if (!browseOptions) return;
 
     try {
-        beginDownload(url, browseOptions.playlist, browseOptions.opts);
+        await beginDownload(url, browseOptions.playlist, browseOptions.opts);
         browserToast("Added to downloads");
     } catch (e) {
         browserToast(e instanceof Error ? e.message : String(e), "error");
@@ -842,23 +981,17 @@ const BROWSER_SCRIPT = `(() => {
         }
     };
 
-    if (!window.__vcLocalMusic) {
-        window.__vcLocalMusic = true;
-
-        // capture phase, because the site's own router would otherwise handle the
-        // click first and turn it into a soft navigation we never see
-        document.addEventListener("click", event => {
-            if (event.button !== 0 || event.metaKey || event.ctrlKey) return;
-
-            const anchor = event.composedPath().find(node => node.tagName === "A" && node.href);
-            if (!anchor || !isTrack(anchor.href)) return;
-
-            event.preventDefault();
-            event.stopPropagation();
-            event.stopImmediatePropagation();
-            ask("/enqueue", { url: new URL(anchor.href, location.href).toString() });
-        }, true);
-    }
+    // Running in the page's world means the player element is reachable, and
+    // getVideoData() is how the page itself knows what it is playing — so this
+    // works from anywhere in the app, not just on a /watch page. Both YouTube and
+    // YouTube Music mount their player as #movie_player.
+    const playingUrl = () => {
+        try {
+            const data = document.getElementById("movie_player")?.getVideoData?.();
+            if (data?.video_id) return location.origin + "/watch?v=" + data.video_id;
+        } catch { }
+        return isTrack(location.href) ? location.href : null;
+    };
 
     // the bar lives in a shadow root so the page's stylesheets can't reach it, and is
     // re-attached on demand because a client-side route change can wipe the body
@@ -884,9 +1017,10 @@ const BROWSER_SCRIPT = `(() => {
                 "<button id=back>&#8592;</button>" +
                 "<button id=forward>&#8594;</button>" +
                 "<button id=reload>&#8635;</button>" +
-                "<span class=hint>Clicking a song queues it in LocalMusic instead of playing it</span>" +
+                "<span class=hint>Browse and play as normal, then download from here</span>" +
                 "<span class=toast id=toast></span>" +
-                "<button class=primary id=queue>Queue this page</button>" +
+                "<button id=queue>Queue this page</button>" +
+                "<button class=primary id=playing>&#10515; Download playing</button>" +
                 "</div>";
 
             const shadow = host.shadowRoot;
@@ -896,6 +1030,11 @@ const BROWSER_SCRIPT = `(() => {
             on("forward", () => history.forward());
             on("reload", () => location.reload());
             on("queue", () => ask("/enqueue", { url: location.href }));
+            on("playing", () => {
+                const url = playingUrl();
+                if (url) ask("/enqueue", { url });
+                else window.__vcLocalMusicToast?.("Nothing is playing yet", "error");
+            });
 
             let timer;
             window.__vcLocalMusicToast = (text, tone) => {
@@ -940,8 +1079,9 @@ export async function openBrowser(
         backgroundColor: "#0b0b0b",
         title: "LocalMusic — pick something to download",
         webPreferences: {
-            // its own session, so signing in here never touches Discord's cookies
-            partition: "persist:vc-localmusic",
+            // its own session, so signing in here never touches Discord's cookies —
+            // and the cookie export above is what lets yt-dlp reuse that sign-in
+            partition: BROWSER_PARTITION,
             contextIsolation: true,
             nodeIntegration: false,
             sandbox: true
@@ -962,31 +1102,21 @@ export async function openBrowser(
     webContents.on("did-navigate-in-page", inject);
 
     webContents.setWindowOpenHandler(({ url }) => {
-        if (isTrackUrl(url)) enqueueFromBrowser(url);
         // keep everything in the one window rather than spawning unmanaged popups
-        else if (/^https?:\/\//i.test(url)) webContents.loadURL(url).catch(() => { });
+        if (/^https?:\/\//i.test(url)) webContents.loadURL(url).catch(() => { });
 
         return { action: "deny" };
     });
 
     webContents.on("will-navigate", (event, url) => {
-        if (url.startsWith(BROWSER_ORIGIN)) {
-            event.preventDefault();
+        if (!url.startsWith(BROWSER_ORIGIN)) return;
+        event.preventDefault();
 
-            try {
-                const request = new URL(url);
-                const target = request.searchParams.get("url");
-                if (request.pathname === "/enqueue" && target) enqueueFromBrowser(target);
-            } catch { }
-
-            return;
-        }
-
-        // a track reached any other way (typed, middle-clicked, redirected) queues too
-        if (isTrackUrl(url)) {
-            event.preventDefault();
-            enqueueFromBrowser(url);
-        }
+        try {
+            const request = new URL(url);
+            const target = request.searchParams.get("url");
+            if (request.pathname === "/enqueue" && target) void enqueueFromBrowser(target);
+        } catch { }
     });
 
     win.loadURL(target).catch(() => { });
@@ -1015,6 +1145,9 @@ export async function stopServer(_: IpcMainInvokeEvent) {
     for (const proc of processes.values()) killProcess(proc);
     processes.clear();
     jobs.clear();
+
+    // the exported cookie jar is only ever needed while yt-dlp runs
+    unlink(cookieFilePath()).catch(() => { });
 
     for (const client of eventClients) client.end();
     eventClients.clear();

@@ -5,21 +5,27 @@
  */
 
 import { Button } from "@components/Button";
-import { FormSwitch } from "@components/FormSwitch";
 import { Heading } from "@components/Heading";
 import { Span } from "@components/Span";
 import { classes } from "@utils/misc";
 import { formatDuration } from "@utils/text";
 import type { RenderModalProps } from "@vencord/discord-types";
-import { Modal, openModal, TextInput, useMemo, useState } from "@webpack/common";
+import { Modal, openModal, React, TextInput, useMemo, useState } from "@webpack/common";
 
 import { Downloader } from "./Downloader";
-import { cl } from "./MiniPlayer";
+import { cl, ControlButton, Icon, PATHS, useArtAccent } from "./MiniPlayer";
 import { store, usePlayer, usePlayerPosition } from "./PlayerStore";
-import type { Track } from "./types";
+import type { QueueItem, Track } from "./types";
 
 /** Rendering every row of a 20k track library would lock the UI, so cap it. */
 const MAX_ROWS = 300;
+
+export type LibraryTab = "library" | "queue";
+
+/** Opens the library, optionally straight onto the queue. */
+export function openLibrary(tab: LibraryTab = "library") {
+    openModal(props => <LibraryModal modalProps={props} initialTab={tab} />);
+}
 
 function trackLabel(track: Track) {
     const meta = store.metadata[track.path];
@@ -46,7 +52,176 @@ function TrackRow({ track, index, isCurrent }: { track: Track; index: number; is
                 <span className={cl("row-title")}>{title}</span>
                 {subtitle && <span className={cl("row-subtitle")}>{subtitle}</span>}
             </div>
+
             {track.isVideo && <span className={cl("row-badge")}>VIDEO</span>}
+
+            {/* the row itself plays the track, so the actions must not bubble into it */}
+            <div className={cl("row-actions")} onClick={e => e.stopPropagation()}>
+                <ControlButton
+                    label="Play next"
+                    className={cl("row-action")}
+                    onClick={() => store.playNext(index)}
+                >
+                    <Icon path={PATHS.playNext} label="play next" size={16} />
+                </ControlButton>
+
+                <ControlButton
+                    label="Add to queue"
+                    className={cl("row-action")}
+                    onClick={() => store.addToQueue(index)}
+                >
+                    <Icon path={PATHS.queueAdd} label="add to queue" size={16} />
+                </ControlButton>
+            </div>
+        </div>
+    );
+}
+
+/**
+ * Where a dragged row would land: the id it would sit in front of, or null for the
+ * end of the queue — the same shape moveInQueue takes, so the line the user sees is
+ * literally the move that gets committed.
+ */
+type DropTarget = { beforeId: string | null; };
+
+function QueueRow({ entry, position, nextId, drag }: {
+    entry: { item: QueueItem; track: Track; };
+    position: number;
+    /** the row below this one, which is what "drop below me" lands in front of */
+    nextId: string | null;
+    drag: {
+        draggingId: string | null;
+        target: DropTarget | null;
+        onStart: (id: string) => void;
+        onOver: (e: React.DragEvent, beforeId: string | null) => void;
+        onEnd: () => void;
+    };
+}) {
+    const { item, track } = entry;
+    const { title, subtitle } = trackLabel(track);
+
+    return (
+        <div
+            className={classes(
+                cl("row"),
+                cl("queue-row"),
+                drag.draggingId === item.id && cl("queue-row-dragging"),
+                drag.target?.beforeId === item.id && cl("queue-row-drop")
+            )}
+            draggable
+            onDragStart={e => {
+                // Chromium refuses to start a drag that carries no payload
+                e.dataTransfer.setData("text/plain", item.id);
+                e.dataTransfer.effectAllowed = "move";
+                drag.onStart(item.id);
+            }}
+            onDragOver={e => {
+                const { top, height } = e.currentTarget.getBoundingClientRect();
+                // the top half drops in front of this row, the bottom half behind it
+                drag.onOver(e, e.clientY - top < height / 2 ? item.id : nextId);
+            }}
+            onDragEnd={drag.onEnd}
+            onClick={() => store.playQueued(item.id)}
+            role="button"
+            tabIndex={0}
+            onKeyDown={e => {
+                if (e.key === "Enter" || e.key === " ") store.playQueued(item.id);
+            }}
+        >
+            <span className={cl("queue-grip")} aria-hidden>
+                <Icon path={PATHS.drag} label="" size={16} />
+            </span>
+
+            <span className={cl("queue-position")}>{position}</span>
+
+            <div className={cl("row-text")}>
+                <span className={cl("row-title")}>{title}</span>
+                {subtitle && <span className={cl("row-subtitle")}>{subtitle}</span>}
+            </div>
+
+            {track.isVideo && <span className={cl("row-badge")}>VIDEO</span>}
+
+            <div className={cl("row-actions")} onClick={e => e.stopPropagation()}>
+                <ControlButton
+                    label="Remove from queue"
+                    className={cl("row-action")}
+                    onClick={() => store.removeFromQueue(item.id)}
+                >
+                    <Icon path={PATHS.close} label="remove" size={16} />
+                </ControlButton>
+            </div>
+        </div>
+    );
+}
+
+function QueueList() {
+    const player = usePlayer();
+    const entries = player.queueEntries;
+
+    const [draggingId, setDraggingId] = useState<string | null>(null);
+    const [target, setTarget] = useState<DropTarget | null>(null);
+
+    function onOver(e: React.DragEvent, beforeId: string | null) {
+        if (!draggingId) return;
+
+        // without both of these the browser rejects the drop outright
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "move";
+
+        // dropping a row onto its own leading edge moves nothing
+        setTarget(beforeId === draggingId ? null : { beforeId });
+    }
+
+    function onEnd() {
+        setDraggingId(null);
+        setTarget(null);
+    }
+
+    function onDrop(e: React.DragEvent) {
+        e.preventDefault();
+        if (draggingId && target) store.moveInQueue(draggingId, target.beforeId);
+        onEnd();
+    }
+
+    const drag = { draggingId, target, onStart: setDraggingId, onOver, onEnd };
+
+    if (!entries.length) {
+        return (
+            <div className={cl("queue-empty")}>
+                <Icon path={PATHS.queue} label="" size={28} />
+                <Span size="sm">
+                    Nothing queued. Use <strong>Play next</strong> or <strong>Add to queue</strong> on a
+                    track in your library and it will show up here.
+                </Span>
+            </div>
+        );
+    }
+
+    return (
+        <div
+            className={classes(cl("list"), cl("queue-list"))}
+            // releasing in the 2px between two rows should still drop where the line
+            // says it will, so the whole list accepts what the rows have already aimed
+            onDragOver={e => { if (draggingId) e.preventDefault(); }}
+            onDrop={onDrop}
+            // a drag that ends outside any row still has to be cleaned up
+            onDragEnd={onEnd}
+        >
+            {entries.map((entry, i) => (
+                <QueueRow
+                    key={entry.item.id}
+                    entry={entry}
+                    position={i + 1}
+                    nextId={entries[i + 1]?.item.id ?? null}
+                    drag={drag}
+                />
+            ))}
+
+            {/* the tail catches drops past the last row, so a track can reach the end */}
+            <div
+                className={classes(cl("queue-tail"), target?.beforeId === null && cl("queue-tail-drop"))}
+                onDragOver={e => onOver(e, null)}
+            />
         </div>
     );
 }
@@ -62,6 +237,13 @@ function NowPlaying() {
 
     return (
         <div className={cl("now-playing")}>
+            {art && (
+                <div
+                    className={classes(cl("backdrop"), cl("now-playing-backdrop"))}
+                    style={{ backgroundImage: `url(${art})` }}
+                />
+            )}
+
             {art
                 ? <img className={cl("now-playing-art")} src={art} alt="" />
                 : <div className={classes(cl("now-playing-art"), cl("art-placeholder"))} />}
@@ -77,9 +259,17 @@ function NowPlaying() {
     );
 }
 
-export function LibraryModal({ modalProps }: { modalProps: RenderModalProps; }) {
+export function LibraryModal({ modalProps, initialTab = "library" }: {
+    modalProps: RenderModalProps;
+    initialTab?: LibraryTab;
+}) {
     const player = usePlayer();
+    const [tab, setTab] = useState<LibraryTab>(initialTab);
     const [query, setQuery] = useState("");
+
+    const { currentTrack } = player;
+    const accent = useArtAccent(currentTrack ? player.artUrl(currentTrack) : null);
+    const queued = player.queueEntries.length;
 
     const filtered = useMemo(() => {
         const needle = query.trim().toLowerCase();
@@ -101,98 +291,99 @@ export function LibraryModal({ modalProps }: { modalProps: RenderModalProps; }) 
 
     return (
         <Modal {...modalProps} title="Music Library" size="lg">
-            <div className={cl("modal")}>
+            <div
+                className={cl("modal")}
+                // tint the whole modal to whatever's playing, like the panel
+                style={accent ? { "--vc-lm-accent": accent } as React.CSSProperties : undefined}
+            >
                 <NowPlaying />
 
-                <div className={cl("folder-row")}>
-                    <div className={cl("folder-path")} title={player.folder ?? undefined}>
-                        {player.folder ?? "No folder selected"}
-                    </div>
-                    <Button size="small" onClick={() => player.pickFolder()}>
-                        {player.folder ? "Change" : "Choose folder"}
-                    </Button>
-                    <Button
-                        size="small"
-                        variant="secondary"
-                        disabled={!player.folder || player.isScanning}
-                        onClick={() => player.rescan()}
+                <div className={cl("tabs")}>
+                    <button
+                        className={classes(cl("tab"), tab === "library" && cl("tab-active"))}
+                        onClick={() => setTab("library")}
                     >
-                        {player.isScanning ? "Scanning…" : "Rescan"}
-                    </Button>
-                    <Button
-                        size="small"
-                        variant="secondary"
-                        onClick={() => openModal(props => <Downloader modalProps={props} />)}
+                        Library
+                    </button>
+                    <button
+                        className={classes(cl("tab"), tab === "queue" && cl("tab-active"))}
+                        onClick={() => setTab("queue")}
                     >
-                        Download…
-                    </Button>
-                </div>
+                        Up next
+                        {queued > 0 && <span className={cl("tab-count")}>{queued}</span>}
+                    </button>
 
-                <div className={cl("toggles")}>
-                    <FormSwitch
-                        hideBorder
-                        title="Shuffle"
-                        value={player.shuffle}
-                        onChange={() => player.toggleShuffle()}
-                    />
-                    <FormSwitch
-                        hideBorder
-                        title="Show the player panel"
-                        description="The video (or cover art) and its controls, docked above the account panel"
-                        value={player.videoDocked}
-                        onChange={() => player.toggleVideoDock()}
-                    />
-                </div>
-
-                <div className={cl("inline-row")}>
-                    <Span size="sm">Repeat</Span>
-                    <Button size="small" variant="secondary" onClick={() => player.cycleRepeat()}>
-                        {player.repeat === "off" ? "Off" : player.repeat === "all" ? "All" : "One"}
-                    </Button>
-
-                    <Span size="sm">Volume</Span>
-                    <input
-                        className={cl("volume")}
-                        type="range"
-                        min={0}
-                        max={1}
-                        step={0.01}
-                        value={player.volume}
-                        onChange={e => player.setVolume(Number(e.currentTarget.value))}
-                    />
-                </div>
-
-                <TextInput
-                    value={query}
-                    onChange={setQuery}
-                    placeholder="Search your library…"
-                />
-
-                <div className={cl("list")}>
-                    {!player.tracks.length && (
-                        <Span size="sm">
-                            {player.isScanning
-                                ? "Scanning…"
-                                : player.folder
-                                    ? "No playable files found in this folder."
-                                    : "Choose a folder to get started."}
-                        </Span>
+                    {tab === "queue" && queued > 0 && (
+                        <Button
+                            className={cl("tabs-action")}
+                            size="small"
+                            variant="secondary"
+                            onClick={() => player.clearQueue()}
+                        >
+                            Clear
+                        </Button>
                     )}
-
-                    {visible.map(({ track, index }) => (
-                        <TrackRow
-                            key={track.path}
-                            track={track}
-                            index={index}
-                            isCurrent={index === player.currentIndex}
-                        />
-                    ))}
                 </div>
 
-                {filtered.length > MAX_ROWS && (
-                    <Span size="sm">
-                        Showing {MAX_ROWS} of {filtered.length} tracks — search to narrow it down.
-                    </Span>
+                {tab === "queue" ? <QueueList /> : (
+                    <>
+                        <div className={cl("folder-row")}>
+                            <div className={cl("folder-path")} title={player.folder ?? undefined}>
+                                {player.folder ?? "No folder selected"}
+                            </div>
+                            <Button size="small" onClick={() => player.pickFolder()}>
+                                {player.folder ? "Change" : "Choose folder"}
+                            </Button>
+                            <Button
+                                size="small"
+                                variant="secondary"
+                                disabled={!player.folder || player.isScanning}
+                                onClick={() => player.rescan()}
+                            >
+                                {player.isScanning ? "Scanning…" : "Rescan"}
+                            </Button>
+                            <Button
+                                size="small"
+                                variant="secondary"
+                                onClick={() => openModal(props => <Downloader modalProps={props} />)}
+                            >
+                                Download…
+                            </Button>
+                        </div>
+
+                        <TextInput
+                            value={query}
+                            onChange={setQuery}
+                            placeholder="Search your library…"
+                        />
+
+                        <div className={cl("list")}>
+                            {!player.tracks.length && (
+                                <Span size="sm">
+                                    {player.isScanning
+                                        ? "Scanning…"
+                                        : player.folder
+                                            ? "No playable files found in this folder."
+                                            : "Choose a folder to get started."}
+                                </Span>
+                            )}
+
+                            {visible.map(({ track, index }) => (
+                                <TrackRow
+                                    key={track.path}
+                                    track={track}
+                                    index={index}
+                                    isCurrent={index === player.currentIndex}
+                                />
+                            ))}
+                        </div>
+
+                        {filtered.length > MAX_ROWS && (
+                            <Span size="sm">
+                                Showing {MAX_ROWS} of {filtered.length} tracks — search to narrow it down.
+                            </Span>
+                        )}
+                    </>
                 )}
             </div>
         </Modal>

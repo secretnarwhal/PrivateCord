@@ -31,11 +31,11 @@ result thumbnails.
 
 ```
 ┌────────────────────────────┐◹
-│ track — artist             │  <- on hover
-│    video, or cover art     │
-│ ⏮ ⏯ ⏭ ▁▁▁▁▁▁▁▁ ⧉ ⛶ │  <- overlay, on hover
-├────────────────────────────┤
-│ ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁ │  <- click to seek
+│ ▣ track — artist 🎞 ☰ ⧉ ⇱ ⛶ │  <- track strip (art thumb · video toggle/queue/library/pop out/fullscreen)
+│      video, or             │
+│   ▂▄▆█▆▄▂ visualizer ▂▄▆█▆ │
+│ ▬▬▬▬▬▬▬▬●▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬ │  <- seek bar, click or drag
+│ 🔀 ⏮ ⏯ ⏭ 🔁   1:23/4:56 🔊 │  <- transport
 ├────────────────────────────┤
 │ 🔊 Voice Connected          │  <- untouched
 │ username                    │  <- untouched
@@ -43,12 +43,56 @@ result thumbnails.
 ```
 
 There is no separate control bar: everything lives on the panel itself. Click to
-play/pause, double click (or ⛶) for fullscreen, and ⧉ opens the library modal —
-folder picker, search, track list, shuffle/repeat, volume, the panel toggle, and
-**Download…**.
+play/pause, double click (or ⛶) for fullscreen, ⇱ pops the panel out of the
+sidebar to float over the client, ⧉ opens the library modal — folder picker,
+search, track list, the panel toggle, and **Download…** — and ☰ opens the same
+modal on the queue, with a badge showing how many tracks are waiting. Shuffle and
+repeat sit right in the transport row (repeat cycles off → all → one).
 
-Audio-only files get the same panel with the embedded cover art in place of the
-picture, so the layout never changes shape between a song and a music video.
+Volume works like YouTube's: the 🔊 icon mutes on click, and hovering it pops up
+a small vertical slider to drag (the scroll wheel over it nudges the volume too).
+
+### The queue
+
+The modal has two tabs: **Library** and **Up next**.
+
+Clicking a track in the library plays it immediately, as it always did. Hovering
+a row also reveals two buttons that put it in the queue instead:
+
+- **Play next** — jumps it to the front, so it plays the moment this track ends
+- **Add to queue** — appends it to the end
+
+The **Up next** tab lists what is waiting, in order. Rows drag to rearrange —
+grab one anywhere and an accent line shows where it will land, including past the
+last row. Clicking a queued row plays it now and takes it out of the queue; ✕
+removes it without playing it, and **Clear** empties the whole thing.
+
+The queue outranks both the library order and shuffle: whenever a track ends,
+whatever is at the front of the queue plays next and is consumed. The one
+exception is repeat-one, which means "do not move on" and keeps the queue intact
+until it is switched off. When the queue runs dry, playback falls back to
+shuffle / the library order as before.
+
+The queue is saved with the rest of the player's prefs, so it survives a restart.
+Entries whose file has since disappeared are dropped on the next rescan.
+
+### The visualizer
+
+Audio-only files get a live spectrum — frequency bars mirrored around the
+centre line, drawn over the blurred cover art (or an accent-tinted wash when the
+file embeds none). Video files show their picture instead, unless the `showVideo`
+setting is off — the 🎞 button on the panel toggles it — in which case they get
+the visualizer too.
+
+For video files the track strip and the transport only appear on hover, keeping
+the picture clean; in visualizer mode they stay up, since the panel is then a
+now-playing card rather than a viewport.
+
+The analysis runs on a Web Audio `AnalyserNode` tapped into the shared media
+element. That is also why the loopback server sends
+`Access-Control-Allow-Origin: *` and the element uses `crossorigin="anonymous"`:
+a media element without clean CORS still plays, but analyses as pure silence.
+(The token query parameter is what actually gates access to the server.)
 
 ### Resizing
 
@@ -67,6 +111,21 @@ is rendered into a portal on `document.body` and pinned, `position: fixed`, over
 a spacer that stays behind in the sidebar to reserve its height. Widening it
 therefore spills out over the chat rather than being cut off.
 
+### Popping out
+
+⇱ on the track strip lifts the panel out of the sidebar so it floats anywhere
+over the client; ⇲ puts it back. Drag it by the track strip, which becomes its
+title bar and stops hiding itself over a video, since it is then the only thing
+there is to grab. The resize edges work exactly as they do docked — the panel is
+still pinned by its bottom-left corner, so it grows up and to the right.
+
+It is not a separate window: it is the same portal on `document.body`, so it
+moves with the Discord window, clips at its edges, and can't be dragged outside
+it. Only what the panel is pinned to changes — a free window-relative anchor
+instead of the spacer's rect. The spacer collapses to nothing while floating, so
+the channel list gets that space back, and both the anchor and the popped-out
+state are persisted.
+
 ## Media keys
 
 Two mechanisms, picked with the `mediaKeys` setting.
@@ -75,28 +134,34 @@ Two mechanisms, picked with the `mediaKeys` setting.
 embedded cover art are handed to the OS, along with handlers for
 play/pause/next/previous/seek. This is the good path: the desktop routes the
 keys, other players keep working normally, and you get a proper "now playing"
-widget for free.
+widget for free (SMTC on Windows, the Now Playing widget on macOS, MPRIS on
+Linux — which is what KDE, GNOME and the Wayland compositors bind the media
+keys to).
 
-- Windows: the SMTC overlay, on by default in Electron
-- macOS: the Now Playing widget, on by default in Electron
-- Linux: MPRIS, which is what KDE, GNOME and the various Wayland compositors
-  bind the media keys to. Chromium only publishes an MPRIS interface when
-  `MediaSessionService` is enabled, and Electron leaves it off on Linux, so
-  `native.ts` appends `--enable-features=MediaSessionService,HardwareMediaKeyHandling`
-  at import time.
+This path needs two Chromium features, `MediaSessionService` and
+`HardwareMediaKeyHandling`. Electron enables both by default on Windows and
+macOS — **but Discord's own bootstrap passes both to `--disable-features` on
+every platform**, which is why the stock client never reacts to media keys. On
+Linux, Electron additionally ships with them off in the first place.
 
-  Chromium only reads feature switches before the app is ready, so this only
-  works if Vencord's main process code loads early enough. It does under
-  Discord's own client; if the host app (Vesktop, say) loads us after
-  `app.whenReady`, `native.ts` logs a warning and you'll need to pass the flag
-  yourself:
+`native.ts` therefore fixes the command line at import time, which is early
+enough because plugin natives load before Discord's bootstrap runs:
 
-  ```bash
-  vesktop --enable-features=MediaSessionService,HardwareMediaKeyHandling
-  ```
+- scrubs both features out of anything already on `--disable-features`
+- wraps `app.commandLine.appendSwitch` so Discord's later
+  `--disable-features` append gets the same scrub
+- adds both to `--enable-features`
 
-  Check it worked with `playerctl -l`, or look for the player in your desktop's
-  media widget.
+Chromium only reads feature switches before the app is ready. If the host app
+(Vesktop, say) loads us after `app.whenReady`, `native.ts` logs a warning and
+you'll need to pass the flag yourself:
+
+```bash
+vesktop --enable-features=MediaSessionService,HardwareMediaKeyHandling
+```
+
+On Linux, check it worked with `playerctl -l`; on Windows, play something and
+press a media key — the SMTC flyout should show the track.
 
 **`global`** — registers `MediaPlayPause`, `MediaNextTrack`,
 `MediaPreviousTrack` and `MediaStop` through Electron's `globalShortcut`. This
@@ -135,11 +200,16 @@ state it ended in.
 
 ### The browse window
 
-**Browse…** opens YouTube in its own Electron window with one behaviour changed:
-following a link to a track queues it for download instead of playing it.
-Everything else navigates normally, so searching, playlists and channels all
-still browse. A bar along the bottom carries back/forward/reload and **Queue
-this page**, for when you are already looking at the thing you want.
+**Browse…** opens YouTube Music in its own Electron window, and leaves the site
+completely alone — browsing, searching and playing all behave exactly as they
+do in a normal browser. The additions live in a bar along the bottom:
+back/forward/reload, **Download playing** — which queues whatever the player is
+currently playing — and **Queue this page**, for when the page itself is the
+thing you want (an album, a playlist, a video).
+
+"Playing" is read from the page's own player (`#movie_player`'s
+`getVideoData()`, which both YouTube and YouTube Music expose), so it works
+mid-playlist, from search results, from anywhere — not just on a watch page.
 
 The window gets its own `persist:vc-localmusic` session, so signing in there
 never touches Discord's cookies — and it is a plain sandboxed window: no
@@ -148,6 +218,23 @@ preload, no node integration. It talks back by navigating to an unresolvable
 cancels, which works no matter what the page's own CSP allows.
 
 The playlist toggle applies to what the window queues, and follows it live.
+
+### Signing in, and Liked Music
+
+Signing in to YouTube inside the browse window is also what unlocks your own
+library for yt-dlp: before every invocation the session's YouTube/Google
+cookies are exported as a Netscape `cookies.txt` (into Discord's user data
+directory, deleted when the plugin stops) and passed with `--cookies`. Nothing
+else in the jar is exported, and anonymous cookies aren't exported at all.
+
+That makes the **Liked** button work: it lists your newest 100 likes — the
+`https://music.youtube.com/playlist?list=LM` playlist, fetched flat — each with
+its own Download button, plus **Download all**. "All" runs one yt-dlp over the
+whole playlist with `--download-archive` pointed at
+`.vc-localmusic-archive.txt` in your music folder, so running it again only
+fetches likes it hasn't fetched before. That archive applies to every playlist
+download (single-track downloads skip it, so deliberately re-downloading one
+song still works); delete the file to forget the history.
 
 ### Searching from the modal
 
@@ -159,19 +246,18 @@ anything listed is by definition downloadable:
 - any URL you paste is handed straight to yt-dlp, so playlists, albums and
   channels work too
 
-Set `cookiesFromBrowser` to reach things that need you signed in — yt-dlp reads
-the cookie jar out of your existing browser profile, so no separate login and no
-credentials pass through Discord. Your own library is then just a URL to paste:
-
-| what | url |
-| --- | --- |
-| Liked Music | `https://music.youtube.com/playlist?list=LM` |
-| Watch later | `https://www.youtube.com/playlist?list=WL` |
-| Uploads/subs/playlists | paste the page URL |
-
-Note that Chrome-family browsers on Linux encrypt cookies against the desktop
-keyring, and Chrome ≥ 127 on Windows locks its cookie DB while running; Firefox
-is the path of least resistance.
+Anything that needs you signed in — Liked Music, Watch later
+(`https://www.youtube.com/playlist?list=WL`), private playlists — works once
+you've signed in through the browse window, as above. `cookiesFromBrowser` is
+the alternative for people who'd rather not: yt-dlp reads the cookie jar out of
+an existing browser profile instead. Note that Chrome-family browsers on Linux
+encrypt cookies against the desktop keyring, and Chrome ≥ 127 (Brave, Edge, …
+included) on Windows locks and encrypts its cookie DB; Firefox is the path of
+least resistance there, which is why the browse-window sign-in is the default
+and takes precedence whenever it exists. When a configured browser's jar turns
+out to be unreadable, the run is retried once without cookies rather than
+failing outright — public tracks still download, only the signed-in-only stuff
+doesn't.
 
 ## Supported formats
 

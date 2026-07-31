@@ -48,6 +48,11 @@ export const settings = definePluginSettings({
         ],
         onChange: () => onMediaKeysChange?.()
     },
+    showVideo: {
+        type: OptionType.BOOLEAN,
+        description: "Show the picture for video files. When off, videos get the audio visualizer too. Also toggleable from the player itself",
+        default: true
+    },
     ytDlpPath: {
         type: OptionType.STRING,
         description: "Path to yt-dlp. Leave empty to use ./yt-dlp in your music folder, then whatever is on your PATH",
@@ -62,9 +67,9 @@ export const settings = definePluginSettings({
     },
     cookiesFromBrowser: {
         type: OptionType.SELECT,
-        description: "Read cookies from this browser, so your own playlists and Liked Music are reachable",
+        description: "Read cookies from this browser instead of the Browse… window's own sign-in. Only needed if you'd rather not sign in there",
         options: [
-            { label: "Don't use cookies", value: "", default: true },
+            { label: "Use the Browse… window's sign-in (default)", value: "", default: true },
             { label: "Firefox", value: "firefox" },
             { label: "Chrome", value: "chrome" },
             { label: "Chromium", value: "chromium" },

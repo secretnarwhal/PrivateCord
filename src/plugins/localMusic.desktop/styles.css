@@ -21,6 +21,14 @@
     border-bottom: 1px solid var(--border-subtle);
 }
 
+/* popped out, nothing is left in the sidebar but the collapsed spacer — so the
+   dock's own background and divider would just be a stray line above the account
+   panel */
+.vc-lm-player-floating {
+    background: none;
+    border-bottom: none;
+}
+
 /* Holds the sidebar space the (portalled) panel is pinned over */
 .vc-lm-spacer {
     width: 100%;
@@ -42,18 +50,22 @@
 
 .vc-lm-title {
     font-size: 13px;
-    font-weight: 500;
-    line-height: 16px;
+    font-weight: 600;
+    line-height: 17px;
+    letter-spacing: 0.01em;
     color: #fff;
+    text-shadow: 0 1px 2px rgb(0 0 0 / 50%);
 }
 
 .vc-lm-artist {
     font-size: 11px;
     line-height: 14px;
-    color: rgb(255 255 255 / 70%);
+    color: rgb(255 255 255 / 65%);
+    text-shadow: 0 1px 2px rgb(0 0 0 / 50%);
 }
 
 .vc-lm-button {
+    position: relative;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -61,31 +73,20 @@
     height: 26px;
     padding: 0;
     border: none;
-    border-radius: var(--radius-sm);
+    border-radius: 8px;
     background: none;
     color: var(--interactive-icon-default);
     cursor: pointer;
+    transition: color 0.15s ease, background-color 0.15s ease, transform 0.15s ease;
+}
+
+.vc-lm-button:active {
+    transform: scale(0.92);
 }
 
 .vc-lm-button:hover {
     color: var(--interactive-icon-hover);
     background-color: var(--background-mod-strong);
-}
-
-.vc-lm-progress {
-    height: 3px;
-    background: var(--background-mod-subtle);
-    cursor: pointer;
-}
-
-.vc-lm-progress:hover {
-    height: 5px;
-}
-
-.vc-lm-progress-fill {
-    height: 100%;
-    background: var(--brand-500);
-    transition: width 0.1s linear;
 }
 
 .vc-lm-error {
@@ -101,12 +102,56 @@
 .vc-lm-video {
     position: fixed;
     z-index: 100;
-    background: black;
     display: flex;
     flex-direction: column;
-    border-start-start-radius: 10px;
-    border-start-end-radius: 10px;
+    background: #000;
+    border-start-start-radius: 16px;
+    border-start-end-radius: 16px;
     overflow: hidden;
+    box-shadow:
+        0 -12px 40px rgb(0 0 0 / 35%),
+        inset 0 0 0 1px rgb(255 255 255 / 7%);
+
+    /* one accent for the fills, the badges and the visualizer (which reads it
+       off the canvas with getComputedStyle). MediaPanel overrides it inline
+       with a colour sampled from the cover art. */
+    --vc-lm-accent: var(--brand-500, #5865f2);
+}
+
+/* Floating: no longer sitting on the sidebar's edge, so it rounds off all four
+   corners and casts a shadow in every direction to lift it off the client. */
+.vc-lm-video-floating {
+    border-radius: 16px;
+    box-shadow:
+        0 16px 48px rgb(0 0 0 / 50%),
+        inset 0 0 0 1px rgb(255 255 255 / 10%);
+}
+
+/* audio mode (no video, or video hidden): an ambient accent-tinted wash instead
+   of plain black, for tracks with no cover art to blur */
+.vc-lm-mode-viz {
+    background:
+        radial-gradient(120% 90% at 85% -10%, color-mix(in oklab, var(--vc-lm-accent) 30%, transparent), transparent 60%),
+        radial-gradient(130% 100% at 0% 115%, color-mix(in oklab, var(--vc-lm-accent) 18%, transparent), transparent 55%),
+        linear-gradient(160deg, #14141c, #0a0a10 70%);
+}
+
+/* Blurred cover art behind the visualizer. Oversized and pre-scaled so the blur
+   never shows the edge of the image. */
+.vc-lm-backdrop {
+    position: absolute;
+    inset: -32px;
+    background-position: center;
+    background-size: cover;
+    filter: blur(32px) brightness(42%) saturate(160%);
+    transform: scale(1.1);
+}
+
+.vc-lm-visualizer {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
 }
 
 .vc-lm-video-surface {
@@ -126,7 +171,7 @@
    panel below it and to the sidebar's left edge, so it grows up and to the right. */
 .vc-lm-video-resize {
     position: absolute;
-    z-index: 3;
+    z-index: 5;
     touch-action: none;
 }
 
@@ -150,7 +195,7 @@
     inset-inline-end: 0;
     width: 14px;
     height: 14px;
-    z-index: 4;
+    z-index: 6;
     cursor: nesw-resize;
 }
 
@@ -200,74 +245,338 @@
     opacity: 0.9;
 }
 
-/* Cover art stands in for the picture on audio-only files */
-.vc-lm-video-art {
-    position: absolute;
-    inset: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: var(--background-base-lowest, #000);
-    color: var(--text-muted);
-    overflow: hidden;
-}
-
-.vc-lm-video-art img {
-    width: 100%;
-    height: 100%;
-    object-fit: contain;
-}
-
-/* The track name lives here now that the panel has no bar under it */
-.vc-lm-video-title {
+/* Track strip along the top: cover art thumb, title/artist, panel actions.
+   Always up in audio mode, revealed on hover over a video.
+   The frosted backdrop lives on a ::before so the mask that fades the blur out
+   doesn't fade the strip's own content with it. */
+.vc-lm-meta {
     position: absolute;
     inset-inline: 0;
     inset-block-start: 0;
-    z-index: 1;
-    padding: 6px 10px;
-    background: linear-gradient(rgb(0 0 0 / 70%), transparent);
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
     opacity: 0;
-    transition: opacity 0.1s ease;
-    pointer-events: none;
+    transition: opacity 0.2s ease;
 }
 
-.vc-lm-video:hover .vc-lm-video-title,
-.vc-lm-video:focus-within .vc-lm-video-title {
+.vc-lm-meta::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    background: linear-gradient(rgb(8 8 12 / 65%), transparent);
+    backdrop-filter: blur(10px);
+    mask-image: linear-gradient(#000 30%, transparent);
+}
+
+/* .vc-lm-video-floating: the strip is a floating panel's title bar, so it stays up
+   over a video too — there is nothing else to grab the panel by */
+.vc-lm-video-floating .vc-lm-meta,
+.vc-lm-mode-viz .vc-lm-meta,
+.vc-lm-video:hover .vc-lm-meta,
+.vc-lm-video:focus-within .vc-lm-meta {
     opacity: 1;
 }
 
+.vc-lm-meta-drag {
+    cursor: grab;
+}
+
+/* set on the panel for the length of a drag: the pointer is captured by the strip,
+   so the grabbing cursor has to survive wandering off it */
+.vc-lm-video-dragging,
+.vc-lm-video-dragging .vc-lm-meta-drag {
+    cursor: grabbing;
+    user-select: none;
+}
+
+.vc-lm-meta-art {
+    width: 38px;
+    height: 38px;
+    border-radius: 10px;
+    object-fit: cover;
+    flex: 0 0 auto;
+    box-shadow:
+        0 4px 12px rgb(0 0 0 / 45%),
+        0 0 0 1px rgb(255 255 255 / 12%);
+}
+
+.vc-lm-meta-art-placeholder {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgb(255 255 255 / 10%);
+    color: rgb(255 255 255 / 70%);
+}
+
+.vc-lm-meta-text {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    flex: 1 1 auto;
+}
+
+/* the action cluster only fades in with the pointer, even when the strip itself
+   is pinned up in audio mode */
+.vc-lm-meta-actions {
+    display: flex;
+    gap: 2px;
+    margin-inline-start: auto;
+    opacity: 0;
+    transition: opacity 0.15s ease;
+}
+
+.vc-lm-video:hover .vc-lm-meta-actions,
+.vc-lm-video:focus-within .vc-lm-meta-actions {
+    opacity: 1;
+}
+
+/* Transport along the bottom: progress on top, then the button row.
+   Frosted like the top strip, on a ::before for the same masking reason. */
 .vc-lm-video-overlay {
     position: absolute;
     inset-inline: 0;
     inset-block-end: 0;
     z-index: 2;
     display: flex;
-    align-items: center;
-    gap: 2px;
-    padding: 4px 6px;
-    background: linear-gradient(transparent, rgb(0 0 0 / 70%));
+    flex-direction: column;
+    gap: 1px;
+    padding: 2px 10px 6px;
     opacity: 0;
-    transition: opacity 0.1s ease;
+    transition: opacity 0.2s ease;
 }
 
+.vc-lm-video-overlay::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    background: linear-gradient(transparent, rgb(8 8 12 / 75%));
+    backdrop-filter: blur(12px);
+    mask-image: linear-gradient(transparent, #000 65%);
+}
+
+/* a volume or seek drag holds pointer capture, so it can wander off the panel
+   without the overlay fading away mid-drag; audio mode keeps it up entirely */
+.vc-lm-video-overlay:has(.vc-lm-volume-dragging),
+.vc-lm-video-overlay:has(.vc-lm-progress-scrubbing),
+.vc-lm-mode-viz .vc-lm-video-overlay,
 .vc-lm-video:hover .vc-lm-video-overlay,
 .vc-lm-video:focus-within .vc-lm-video-overlay {
     opacity: 1;
 }
 
-.vc-lm-video-overlay .vc-lm-button {
+.vc-lm-controls-row {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    min-width: 0;
+}
+
+.vc-lm-video .vc-lm-button {
+    color: rgb(255 255 255 / 80%);
+}
+
+.vc-lm-video .vc-lm-button:hover {
     color: #fff;
+    background-color: rgb(255 255 255 / 12%);
 }
 
-.vc-lm-video-overlay .vc-lm-button:hover {
-    background-color: rgb(255 255 255 / 20%);
+/* shuffle / repeat when engaged: accent icon on a soft accent pill */
+.vc-lm-video .vc-lm-button.vc-lm-button-active,
+.vc-lm-video .vc-lm-button.vc-lm-button-active:hover {
+    color: var(--vc-lm-accent);
+    background-color: color-mix(in oklab, var(--vc-lm-accent) 16%, transparent);
 }
 
-.vc-lm-video-progress {
-    flex: 1 1 auto;
-    margin-inline: 6px;
+.vc-lm-video .vc-lm-play-button,
+.vc-lm-video .vc-lm-play-button:hover {
+    width: 32px;
+    height: 32px;
+    margin-inline: 3px;
+    border-radius: 50%;
+    background: linear-gradient(
+        135deg,
+        color-mix(in oklab, var(--vc-lm-accent) 80%, #fff),
+        var(--vc-lm-accent)
+    );
+    color: #fff;
+    box-shadow: 0 2px 14px color-mix(in oklab, var(--vc-lm-accent) 55%, transparent);
+}
+
+.vc-lm-video .vc-lm-play-button:hover {
+    transform: scale(1.08);
+}
+
+.vc-lm-video .vc-lm-play-button:active {
+    transform: scale(0.96);
+}
+
+.vc-lm-repeat-badge,
+.vc-lm-count-badge {
+    position: absolute;
+    inset-block-end: 1px;
+    inset-inline-end: 1px;
+    padding: 1px 2.5px;
+    border-radius: 4px;
+    font-size: 8px;
+    font-weight: 700;
+    line-height: 1;
+    background: var(--vc-lm-accent);
+    color: #fff;
+    box-shadow: 0 0 6px color-mix(in oklab, var(--vc-lm-accent) 60%, transparent);
+}
+
+.vc-lm-time {
+    margin-inline-start: auto;
+    padding-inline: 4px;
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    color: rgb(255 255 255 / 75%);
+    white-space: nowrap;
+    overflow: hidden;
+}
+
+/* Seek bar: slim track inside a fat, grabbable hit area, with a thumb on hover */
+.vc-lm-progress {
+    padding-block: 4px;
+    cursor: pointer;
+    touch-action: none;
+}
+
+.vc-lm-progress-track {
+    position: relative;
+    height: 3px;
     border-radius: 2px;
-    background: rgb(255 255 255 / 30%);
+    background: rgb(255 255 255 / 18%);
+    transition: height 0.1s ease;
+}
+
+.vc-lm-progress-scrubbing .vc-lm-progress-track,
+.vc-lm-progress:hover .vc-lm-progress-track {
+    height: 5px;
+}
+
+.vc-lm-progress-fill {
+    position: relative;
+    height: 100%;
+    max-width: 100%;
+    border-radius: inherit;
+    background: linear-gradient(
+        90deg,
+        color-mix(in oklab, var(--vc-lm-accent, var(--brand-500)) 70%, #fff),
+        var(--vc-lm-accent, var(--brand-500))
+    );
+    box-shadow: 0 0 8px color-mix(in oklab, var(--vc-lm-accent, var(--brand-500)) 45%, transparent);
+}
+
+.vc-lm-progress-fill::after {
+    content: "";
+    position: absolute;
+    inset-inline-end: -5px;
+    inset-block-start: 50%;
+    translate: 0 -50%;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 1px 4px rgb(0 0 0 / 40%);
+    opacity: 0;
+    scale: 0.5;
+    transition: opacity 0.1s ease, scale 0.1s ease;
+}
+
+.vc-lm-progress-scrubbing .vc-lm-progress-fill::after,
+.vc-lm-progress:hover .vc-lm-progress-fill::after {
+    opacity: 1;
+    scale: 1;
+}
+
+/* the slim always-on bar above the account panel when the panel is hidden */
+.vc-lm-player > .vc-lm-progress {
+    padding-block: 0;
+}
+
+.vc-lm-player > .vc-lm-progress .vc-lm-progress-track {
+    height: 3px;
+    border-radius: 0;
+    background: var(--background-mod-subtle);
+}
+
+.vc-lm-player > .vc-lm-progress:hover .vc-lm-progress-track {
+    height: 5px;
+}
+
+/* YouTube-style volume: the speaker icon anchors a slider that pops up over it */
+.vc-lm-volume {
+    position: relative;
+    display: flex;
+}
+
+.vc-lm-volume-popup {
+    position: absolute;
+    inset-block-end: 100%;
+    inset-inline-start: 50%;
+    translate: -50%;
+
+    /* invisible bridge so the pointer can travel from the icon to the slider */
+    padding-block-end: 4px;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.1s ease, visibility 0.1s;
+}
+
+/* dragging keeps it open: pointer capture lets the drag wander off the popup */
+.vc-lm-volume-dragging .vc-lm-volume-popup,
+.vc-lm-volume:hover .vc-lm-volume-popup,
+.vc-lm-volume:focus-within .vc-lm-volume-popup {
+    opacity: 1;
+    visibility: visible;
+}
+
+.vc-lm-volume-slider {
+    display: flex;
+    justify-content: center;
+    padding: 10px 12px;
+    border-radius: 10px;
+    background: rgb(16 16 22 / 75%);
+    backdrop-filter: blur(12px);
+    box-shadow:
+        0 4px 16px rgb(0 0 0 / 40%),
+        inset 0 0 0 1px rgb(255 255 255 / 8%);
+    cursor: pointer;
+    touch-action: none;
+}
+
+.vc-lm-volume-track {
+    position: relative;
+    width: 4px;
+    height: 60px;
+    border-radius: 2px;
+    background: rgb(255 255 255 / 22%);
+}
+
+.vc-lm-volume-fill {
+    position: absolute;
+    inset-block-end: 0;
+    inset-inline: 0;
+    border-radius: 2px;
+    background: var(--vc-lm-accent, #fff);
+}
+
+.vc-lm-volume-fill::after {
+    content: "";
+    position: absolute;
+    inset-block-start: -5px;
+    inset-inline-start: 50%;
+    translate: -50%;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #fff;
 }
 
 /* Fullscreen has to beat the inline geometry the resize handles write */
@@ -276,9 +585,14 @@
     width: 100% !important;
     height: 100% !important;
     border-radius: 0;
+    box-shadow: none;
 }
 
 .vc-lm-video:fullscreen .vc-lm-video-overlay {
+    padding: 8px 16px 12px;
+}
+
+.vc-lm-video:fullscreen .vc-lm-meta {
     padding: 12px 16px;
 }
 
@@ -291,34 +605,127 @@
     display: none !important;
 }
 
-/* Library modal */
+/* Library / downloader modals: same obsidian-and-accent treatment as the panel.
+   The ModalRoot that contains our content gets restyled outright — including the
+   text vars, so Discord's own components (headings, spans, switches) stay readable
+   even on light themes. Same minified-prefix trick as the Go Live tile below. */
+[class*="root_"]:has(.vc-lm-modal) {
+    background: linear-gradient(165deg, #16161e, #0c0c12 70%);
+    box-shadow:
+        0 16px 60px rgb(0 0 0 / 50%),
+        inset 0 0 0 1px rgb(255 255 255 / 7%);
+
+    --header-primary: #fff;
+    --text-default: #e6e6ec;
+    --text-muted: #9c9caa;
+    --interactive-icon-default: #9c9caa;
+    --interactive-icon-hover: #e6e6ec;
+}
+
+[class*="root_"]:has(.vc-lm-modal) [class*="header_"],
+[class*="root_"]:has(.vc-lm-modal) [class*="footer_"] {
+    background: transparent;
+    box-shadow: none;
+}
+
+.vc-lm-modal {
+    /* overridden inline with the sampled cover-art colour while a track plays */
+    --vc-lm-accent: var(--brand-500, #5865f2);
+}
+
+/* Discord's TextInput, re-skinned into a glass field with an accent focus ring */
+.vc-lm-modal input {
+    padding: 10px 12px;
+    border: none;
+    border-radius: 10px;
+    background: rgb(255 255 255 / 5%);
+    box-shadow: inset 0 0 0 1px rgb(255 255 255 / 8%);
+    color: #e6e6ec;
+    transition: box-shadow 0.15s ease, background-color 0.15s ease;
+}
+
+.vc-lm-modal input:focus {
+    background: rgb(255 255 255 / 7%);
+    box-shadow:
+        inset 0 0 0 1px color-mix(in oklab, var(--vc-lm-accent) 70%, transparent),
+        0 0 0 3px color-mix(in oklab, var(--vc-lm-accent) 18%, transparent);
+}
+
+.vc-lm-modal input::placeholder {
+    color: rgb(255 255 255 / 35%);
+}
+
 .vc-lm-modal .vc-lm-list {
     display: flex;
     flex-direction: column;
+    gap: 2px;
     max-height: 320px;
     overflow-y: auto;
-    margin-block-start: 8px;
+    margin-block-start: 10px;
+    padding-inline-end: 4px;
+    scrollbar-width: thin;
+    scrollbar-color: rgb(255 255 255 / 15%) transparent;
 }
 
+.vc-lm-modal .vc-lm-list::-webkit-scrollbar {
+    width: 8px;
+}
+
+.vc-lm-modal .vc-lm-list::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.vc-lm-modal .vc-lm-list::-webkit-scrollbar-thumb {
+    background: rgb(255 255 255 / 12%);
+    border-radius: 4px;
+}
+
+.vc-lm-modal .vc-lm-list::-webkit-scrollbar-thumb:hover {
+    background: rgb(255 255 255 / 20%);
+}
+
+/* Now-playing hero: blurred art wash behind a glass card, tinted by the accent */
 .vc-lm-now-playing {
+    position: relative;
     display: flex;
-    gap: 12px;
+    gap: 14px;
     align-items: center;
-    margin-block-end: 12px;
+    margin-block-end: 14px;
+    padding: 14px;
+    border-radius: 14px;
+    overflow: hidden;
+    background:
+        radial-gradient(130% 170% at 0% 0%, color-mix(in oklab, var(--vc-lm-accent) 26%, transparent), transparent 60%),
+        linear-gradient(160deg, #191922, #101016);
+    box-shadow: inset 0 0 0 1px rgb(255 255 255 / 7%);
+}
+
+/* reuses the panel's blurred-art backdrop; positioned siblings keep content above it */
+.vc-lm-now-playing-backdrop {
+    border-radius: inherit;
+}
+
+.vc-lm-now-playing-art,
+.vc-lm-now-playing-text {
+    position: relative;
 }
 
 .vc-lm-now-playing-art {
-    width: 64px;
-    height: 64px;
-    border-radius: var(--radius-sm);
+    width: 72px;
+    height: 72px;
+    border-radius: 12px;
     object-fit: cover;
-    background: var(--background-mod-subtle);
+    background: rgb(255 255 255 / 6%);
     flex: 0 0 auto;
+    box-shadow:
+        0 6px 18px rgb(0 0 0 / 45%),
+        0 0 0 1px rgb(255 255 255 / 12%);
 }
 
 .vc-lm-now-playing-text {
     display: flex;
     flex-direction: column;
+    gap: 2px;
     min-width: 0;
 }
 
@@ -326,9 +733,10 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    margin-block-end: 8px;
+    margin-block-end: 10px;
 }
 
+/* the folder path as a quiet chip rather than floating gray text */
 .vc-lm-folder-path {
     flex: 1 1 auto;
     min-width: 0;
@@ -337,42 +745,51 @@
     white-space: nowrap;
     direction: rtl;
     text-align: left;
+    padding: 6px 10px;
+    border-radius: 8px;
+    background: rgb(255 255 255 / 4%);
+    box-shadow: inset 0 0 0 1px rgb(255 255 255 / 6%);
     font-size: 12px;
     color: var(--text-muted);
-}
-
-.vc-lm-toggles {
-    margin-block-end: 8px;
 }
 
 .vc-lm-inline-row {
     display: flex;
     align-items: center;
     gap: 8px;
-    margin-block-end: 8px;
-}
-
-.vc-lm-volume {
-    flex: 1 1 auto;
-    min-width: 80px;
-    accent-color: var(--brand-500);
+    margin-block-end: 10px;
 }
 
 .vc-lm-row {
+    position: relative;
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 6px 8px;
-    border-radius: var(--radius-sm);
+    gap: 10px;
+    padding: 8px 10px;
+    border-radius: 10px;
     cursor: pointer;
+    transition: background-color 0.12s ease;
 }
 
 .vc-lm-row:hover {
-    background: var(--background-mod-subtle);
+    background: rgb(255 255 255 / 5%);
 }
 
-.vc-lm-row-active {
-    background: var(--background-mod-normal);
+/* the playing track: accent-tinted card with an accent bar down its left edge */
+.vc-lm-row-active,
+.vc-lm-row-active:hover {
+    background: color-mix(in oklab, var(--vc-lm-accent) 14%, transparent);
+}
+
+.vc-lm-row-active::before {
+    content: "";
+    position: absolute;
+    inset-block: 8px;
+    inset-inline-start: 0;
+    width: 3px;
+    border-radius: 2px;
+    background: var(--vc-lm-accent);
+    box-shadow: 0 0 6px color-mix(in oklab, var(--vc-lm-accent) 60%, transparent);
 }
 
 .vc-lm-row-text {
@@ -396,6 +813,185 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+.vc-lm-row-active .vc-lm-row-title {
+    color: color-mix(in oklab, var(--vc-lm-accent) 65%, #fff);
+    font-weight: 600;
+}
+
+/* Per-row actions (play next / add to queue / remove). Kept out of the way until
+   the row is pointed at, so a long list still reads as a list of titles. */
+.vc-lm-row-actions {
+    display: flex;
+    gap: 2px;
+    flex: 0 0 auto;
+    opacity: 0;
+    transition: opacity 0.12s ease;
+}
+
+.vc-lm-row:hover .vc-lm-row-actions,
+.vc-lm-row:focus-within .vc-lm-row-actions {
+    opacity: 1;
+}
+
+.vc-lm-modal .vc-lm-row-action {
+    width: 24px;
+    height: 24px;
+    border-radius: 7px;
+}
+
+.vc-lm-modal .vc-lm-row-action:hover {
+    background: rgb(255 255 255 / 10%);
+    color: #fff;
+}
+
+/* Library / Up next: a segmented pill, with the queue length riding on its tab */
+.vc-lm-tabs {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-block-end: 12px;
+    padding: 3px;
+    border-radius: 12px;
+    background: rgb(255 255 255 / 4%);
+    box-shadow: inset 0 0 0 1px rgb(255 255 255 / 6%);
+}
+
+.vc-lm-tab {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    border: none;
+    border-radius: 9px;
+    background: none;
+    color: var(--text-muted);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: color 0.15s ease, background-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.vc-lm-tab:hover {
+    color: var(--text-default);
+    background: rgb(255 255 255 / 5%);
+}
+
+.vc-lm-tab-active,
+.vc-lm-tab-active:hover {
+    color: #fff;
+    background: color-mix(in oklab, var(--vc-lm-accent) 22%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--vc-lm-accent) 35%, transparent);
+}
+
+.vc-lm-tab-count {
+    padding: 1px 6px;
+    border-radius: 999px;
+    background: color-mix(in oklab, var(--vc-lm-accent) 30%, transparent);
+    color: color-mix(in oklab, var(--vc-lm-accent) 40%, #fff);
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 15px;
+    font-variant-numeric: tabular-nums;
+}
+
+.vc-lm-tab-active .vc-lm-tab-count {
+    background: var(--vc-lm-accent);
+    color: #fff;
+}
+
+.vc-lm-tabs-action {
+    margin-inline-start: auto;
+    margin-inline-end: 4px;
+}
+
+/* The queue itself. Rows are drag handles in their own right, so the whole row
+   takes the grab cursor and the grip is only there to say so. */
+/* beats the shared list's margin, which is only there to clear the search field.
+   The padding is room for the drop line above the first row, which would otherwise
+   be clipped by the scroll container it sits at the very top of. */
+.vc-lm-modal .vc-lm-queue-list {
+    margin-block-start: 0;
+    padding-block-start: 3px;
+}
+
+.vc-lm-queue-row {
+    gap: 8px;
+    cursor: grab;
+}
+
+.vc-lm-queue-row:active {
+    cursor: grabbing;
+}
+
+/* the row being carried: dimmed in place, so the list keeps its shape under it */
+.vc-lm-queue-row-dragging,
+.vc-lm-queue-row-dragging:hover {
+    opacity: 0.35;
+    background: rgb(255 255 255 / 5%);
+}
+
+/* where it would land — the same line the drop actually commits to */
+.vc-lm-queue-row-drop::after,
+.vc-lm-queue-tail-drop::after {
+    content: "";
+    position: absolute;
+    inset-inline: 0;
+    inset-block-start: -2px;
+    height: 2px;
+    border-radius: 1px;
+    background: var(--vc-lm-accent);
+    box-shadow: 0 0 8px color-mix(in oklab, var(--vc-lm-accent) 70%, transparent);
+}
+
+/* catches drops past the last row, so a track can be dragged to the very end */
+.vc-lm-queue-tail {
+    position: relative;
+    flex: 0 0 auto;
+    height: 22px;
+}
+
+.vc-lm-queue-grip {
+    display: flex;
+    flex: 0 0 auto;
+    margin-inline-start: -2px;
+    color: var(--text-muted);
+    opacity: 0.4;
+    transition: opacity 0.12s ease;
+}
+
+.vc-lm-queue-row:hover .vc-lm-queue-grip {
+    opacity: 0.9;
+}
+
+.vc-lm-queue-position {
+    flex: 0 0 16px;
+    text-align: right;
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-muted);
+}
+
+.vc-lm-queue-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    padding: 34px 28px;
+    border-radius: 14px;
+    background: rgb(255 255 255 / 3%);
+    box-shadow: inset 0 0 0 1px rgb(255 255 255 / 6%);
+    color: var(--text-muted);
+    text-align: center;
+}
+
+.vc-lm-queue-empty .vc-lm-icon {
+    opacity: 0.45;
+}
+
+.vc-lm-queue-empty span {
+    max-width: 42ch;
 }
 
 /* Downloader */
@@ -425,37 +1021,42 @@
 .vc-lm-dl-jobs {
     display: flex;
     flex-direction: column;
-    gap: 4px;
-    max-height: 140px;
+    gap: 6px;
+    max-height: 150px;
     overflow-y: auto;
+    padding-inline-end: 4px;
+    scrollbar-width: thin;
+    scrollbar-color: rgb(255 255 255 / 15%) transparent;
 }
 
 .vc-lm-dl-job {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 4px 8px;
-    border-radius: var(--radius-sm);
-    background: var(--background-mod-subtle);
+    gap: 10px;
+    padding: 8px 10px;
+    border-radius: 10px;
+    background: rgb(255 255 255 / 4%);
+    box-shadow: inset 0 0 0 1px rgb(255 255 255 / 6%);
 }
 
 .vc-lm-dl-dismiss {
     flex: 0 0 auto;
-    width: 20px;
-    height: 20px;
+    width: 22px;
+    height: 22px;
     padding: 0;
     border: none;
-    border-radius: var(--radius-xs);
+    border-radius: 6px;
     background: none;
     color: var(--text-muted);
     font-size: 11px;
     line-height: 1;
     cursor: pointer;
+    transition: background-color 0.12s ease, color 0.12s ease;
 }
 
 .vc-lm-dl-dismiss:hover {
-    background: var(--background-mod-strong);
-    color: var(--text-default);
+    background: rgb(255 255 255 / 10%);
+    color: #fff;
 }
 
 .vc-lm-dl-job-text {
@@ -469,13 +1070,18 @@
     flex: 0 0 90px;
     height: 4px;
     border-radius: 2px;
-    background: var(--background-mod-strong);
+    background: rgb(255 255 255 / 10%);
     overflow: hidden;
 }
 
 .vc-lm-dl-progress-fill {
     height: 100%;
-    background: var(--brand-500);
+    background: linear-gradient(
+        90deg,
+        color-mix(in oklab, var(--vc-lm-accent, var(--brand-500)) 70%, #fff),
+        var(--vc-lm-accent, var(--brand-500))
+    );
+    box-shadow: 0 0 6px color-mix(in oklab, var(--vc-lm-accent, var(--brand-500)) 45%, transparent);
     transition: width 0.2s linear;
 }
 
@@ -492,19 +1098,21 @@
 .vc-lm-dl-thumb {
     width: 56px;
     height: 32px;
-    border-radius: var(--radius-xs);
+    border-radius: 8px;
     object-fit: cover;
     flex: 0 0 auto;
-    background: var(--background-mod-subtle);
+    background: rgb(255 255 255 / 6%);
+    box-shadow: 0 0 0 1px rgb(255 255 255 / 10%);
 }
 
 .vc-lm-row-badge {
     font-size: 9px;
     font-weight: 700;
-    letter-spacing: 0.04em;
-    padding: 2px 4px;
-    border-radius: var(--radius-xs);
-    background: var(--background-mod-strong);
-    color: var(--text-muted);
+    letter-spacing: 0.05em;
+    padding: 2px 5px;
+    border-radius: 5px;
+    background: color-mix(in oklab, var(--vc-lm-accent, var(--brand-500)) 16%, transparent);
+    color: color-mix(in oklab, var(--vc-lm-accent, var(--brand-500)) 55%, #fff);
+    box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--vc-lm-accent, var(--brand-500)) 30%, transparent);
     flex: 0 0 auto;
 }

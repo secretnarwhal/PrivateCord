@@ -10,14 +10,19 @@ import { Span } from "@components/Span";
 import { classes } from "@utils/misc";
 import { formatDuration } from "@utils/text";
 import type { RenderModalProps } from "@vencord/discord-types";
-import { Modal, TextInput, useEffect, useState } from "@webpack/common";
+import { Modal, React, TextInput, useEffect, useState } from "@webpack/common";
 
-import { cl } from "./MiniPlayer";
+import { cl, useArtAccent } from "./MiniPlayer";
 import { store, usePlayer } from "./PlayerStore";
 import { settings } from "./settings";
 import type { DownloadJob, SearchResult, SearchSource, YtDlpInfo } from "./types";
 
 const SEARCH_LIMIT = 25;
+
+/** YouTube Music's Liked Music playlist — only resolvable with the user's cookies. */
+const LIKED_URL = "https://music.youtube.com/playlist?list=LM";
+/** LM lists newest likes first, so the first page is the interesting one. */
+const LIKED_LIMIT = 100;
 
 function isUrl(query: string) {
     return /^https?:\/\//i.test(query.trim());
@@ -108,6 +113,9 @@ export function Downloader({ modalProps }: { modalProps: RenderModalProps; }) {
     const [results, setResults] = useState<SearchResult[]>([]);
     const [searching, setSearching] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [signedIn, setSignedIn] = useState(false);
+    /** whether the current results are the Liked Music listing */
+    const [likedLoaded, setLikedLoaded] = useState(false);
 
     useEffect(() => {
         store.ytDlpInfo().then(setInfo, e => setInfo({ ok: false, binary: "yt-dlp", error: String(e) }));
@@ -115,9 +123,15 @@ export function Downloader({ modalProps }: { modalProps: RenderModalProps; }) {
 
     useEffect(() => {
         // progress arrives over the event stream, but a stream that dropped would
-        // otherwise leave finished jobs frozen mid-download for as long as this is open
-        store.refreshDownloads();
-        const interval = window.setInterval(() => store.refreshDownloads(), 3000);
+        // otherwise leave finished jobs frozen mid-download for as long as this is open.
+        // The login check rides along so signing in via Browse… is noticed live.
+        const refresh = () => {
+            store.refreshDownloads();
+            store.browserLogin().then(setSignedIn, () => setSignedIn(false));
+        };
+
+        refresh();
+        const interval = window.setInterval(refresh, 3000);
 
         return () => window.clearInterval(interval);
     }, []);
@@ -130,6 +144,7 @@ export function Downloader({ modalProps }: { modalProps: RenderModalProps; }) {
 
         setSearching(true);
         setError(null);
+        setLikedLoaded(false);
 
         try {
             setResults(await player.search(query, source, SEARCH_LIMIT));
@@ -141,10 +156,27 @@ export function Downloader({ modalProps }: { modalProps: RenderModalProps; }) {
         }
     }
 
-    async function download(url: string) {
+    /** Lists the user's Liked Music — just a playlist URL that needs their cookies. */
+    async function fetchLiked() {
+        setSearching(true);
+        setError(null);
+        setLikedLoaded(false);
+
+        try {
+            setResults(await player.search(LIKED_URL, source, LIKED_LIMIT));
+            setLikedLoaded(true);
+        } catch (e) {
+            setResults([]);
+            setError(e instanceof Error ? e.message : String(e));
+        } finally {
+            setSearching(false);
+        }
+    }
+
+    async function download(url: string, wholePlaylist = playlist) {
         setError(null);
         try {
-            await player.startDownload(url, playlist);
+            await player.startDownload(url, wholePlaylist);
         } catch (e) {
             setError(e instanceof Error ? e.message : String(e));
         }
@@ -162,13 +194,31 @@ export function Downloader({ modalProps }: { modalProps: RenderModalProps; }) {
     const active = player.downloads.filter(j => j.status === "running").length;
     const finished = player.downloads.length - active;
 
+    const cookieBrowser = settings.store.cookiesFromBrowser;
+    const canReachLiked = signedIn || !!cookieBrowser;
+
+    const { currentTrack } = player;
+    const accent = useArtAccent(currentTrack ? player.artUrl(currentTrack) : null);
+
     return (
         <Modal {...modalProps} title="Download music" size="lg">
-            <div className={cl("modal")}>
+            <div
+                className={cl("modal")}
+                // tint the whole modal to whatever's playing, like the panel
+                style={accent ? { "--vc-lm-accent": accent } as React.CSSProperties : undefined}
+            >
                 <YtDlpStatus info={info} />
 
                 <Span size="sm" className={cl("dl-target")}>
                     Saving to {player.folder ?? "— choose a folder in the library first"}
+                </Span>
+
+                <Span size="sm" className={cl("dl-target")}>
+                    {signedIn
+                        ? "Signed in through the Browse… window — Liked Music and private playlists work."
+                        : cookieBrowser
+                            ? `Using cookies from ${cookieBrowser} — if that browser's cookies are unreadable, sign in through Browse… instead.`
+                            : "Not signed in — open Browse… and sign in to YouTube there to reach your Liked Music."}
                 </Span>
 
                 <div className={cl("inline-row")}>
@@ -185,6 +235,14 @@ export function Downloader({ modalProps }: { modalProps: RenderModalProps; }) {
                         onClick={() => setSource("ytmusic")}
                     >
                         Music
+                    </Button>
+                    <Button
+                        size="small"
+                        variant={likedLoaded ? "primary" : "secondary"}
+                        disabled={searching || !canReachLiked}
+                        onClick={fetchLiked}
+                    >
+                        Liked
                     </Button>
 
                     <div className={cl("dl-query")}>
@@ -251,6 +309,19 @@ export function Downloader({ modalProps }: { modalProps: RenderModalProps; }) {
                     </>
                 )}
 
+                {likedLoaded && !!results.length && (
+                    <div className={cl("dl-heading")}>
+                        <Span size="sm">Liked Music — your newest {results.length} likes</Span>
+                        <Button
+                            size="small"
+                            disabled={!player.folder}
+                            onClick={() => download(LIKED_URL, true)}
+                        >
+                            Download all
+                        </Button>
+                    </div>
+                )}
+
                 <div className={cl("list")}>
                     {results.map(result => (
                         <ResultRow key={result.id} result={result} onDownload={download} />
@@ -258,20 +329,13 @@ export function Downloader({ modalProps }: { modalProps: RenderModalProps; }) {
 
                     {!results.length && !searching && (
                         <Span size="sm">
-                            Search YouTube, or paste any URL yt-dlp understands. <b>Browse…</b> opens YouTube
-                            in its own window, where clicking a song queues it here instead of playing it.
-                            Set a browser under <b>Read cookies from this browser</b> in the plugin settings
-                            to reach your own playlists and Liked Music.
+                            Search YouTube, paste any URL yt-dlp understands, or hit <b>Liked</b> to list
+                            your Liked Music. <b>Browse…</b> opens YouTube Music in its own window — sign in
+                            there once to unlock your playlists, play anything, and its <b>Download playing</b>
+                            button queues the current song here.
                         </Span>
                     )}
                 </div>
-
-                {settings.store.cookiesFromBrowser && (
-                    <Span size="sm">
-                        Using cookies from {settings.store.cookiesFromBrowser}. Your library lives at{" "}
-                        <code>https://music.youtube.com/playlist?list=LM</code>
-                    </Span>
-                )}
             </div>
         </Modal>
     );
