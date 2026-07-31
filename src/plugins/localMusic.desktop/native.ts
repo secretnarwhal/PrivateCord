@@ -1143,8 +1143,10 @@ export async function closeBrowser(_: IpcMainInvokeEvent) {
  * as an allowed root, which lets the existing /media endpoint serve cached
  * files — Range support and all — exactly like library files.
  */
-const CACHE_DIR = join(app.getPath("userData"), "vc-localmusic-cache");
-const CACHE_INDEX_FILE = join(CACHE_DIR, "cache-index.json");
+// resolved lazily: app.getPath at module scope would run during Discord's
+// bootstrap, and this module must never be able to break startup
+const cacheDir = () => join(app.getPath("userData"), "vc-localmusic-cache");
+const cacheIndexFile = () => join(cacheDir(), "cache-index.json");
 
 interface CacheEntry {
     hash: string;
@@ -1176,19 +1178,19 @@ async function loadCacheIndex(): Promise<Map<string, CacheEntry>> {
 
     cacheIndex = new Map();
     try {
-        const entries: CacheEntry[] = JSON.parse(await readFile(CACHE_INDEX_FILE, "utf8"));
+        const entries: CacheEntry[] = JSON.parse(await readFile(cacheIndexFile(), "utf8"));
         for (const entry of entries) {
             // only trust rows whose file still exists
-            if (existsSync(join(CACHE_DIR, entry.file))) cacheIndex.set(entry.hash, entry);
+            if (existsSync(join(cacheDir(), entry.file))) cacheIndex.set(entry.hash, entry);
         }
     } catch {
         // first run, or a corrupt index — rebuild from what is on disk
         try {
-            for (const name of await readdir(CACHE_DIR)) {
+            for (const name of await readdir(cacheDir())) {
                 const hash = name.slice(0, 64);
-                if (!isValidHash(hash) || name.endsWith(".part") || name === basename(CACHE_INDEX_FILE)) continue;
+                if (!isValidHash(hash) || name.endsWith(".part") || name === basename(cacheIndexFile())) continue;
 
-                const { size, mtimeMs } = await stat(join(CACHE_DIR, name));
+                const { size, mtimeMs } = await stat(join(cacheDir(), name));
                 cacheIndex.set(hash, { hash, file: name, size, lastUsed: mtimeMs });
             }
         } catch { }
@@ -1199,7 +1201,7 @@ async function loadCacheIndex(): Promise<Map<string, CacheEntry>> {
 
 function saveCacheIndex() {
     if (!cacheIndex) return;
-    writeFile(CACHE_INDEX_FILE, JSON.stringify([...cacheIndex.values()])).catch(() => { });
+    writeFile(cacheIndexFile(), JSON.stringify([...cacheIndex.values()])).catch(() => { });
 }
 
 /** Oldest-used entries go first until the cache fits the configured limit. */
@@ -1216,7 +1218,7 @@ async function evictCache() {
 
         index.delete(entry.hash);
         total -= entry.size;
-        await rm(join(CACHE_DIR, entry.file), { force: true }).catch(() => { });
+        await rm(join(cacheDir(), entry.file), { force: true }).catch(() => { });
     }
 
     saveCacheIndex();
@@ -1227,19 +1229,19 @@ async function evictCache() {
  * orphaned .part files, and applies the size limit (0 = unlimited).
  */
 export async function getCacheInfo(_: IpcMainInvokeEvent, limitBytes: number): Promise<{ dir: string; }> {
-    await mkdir(CACHE_DIR, { recursive: true });
-    allowedRoots.add(resolve(CACHE_DIR));
+    await mkdir(cacheDir(), { recursive: true });
+    allowedRoots.add(resolve(cacheDir()));
     cacheLimit = limitBytes > 0 ? limitBytes : Number.MAX_SAFE_INTEGER;
 
     try {
-        for (const name of await readdir(CACHE_DIR)) {
-            if (name.endsWith(".part")) await rm(join(CACHE_DIR, name), { force: true }).catch(() => { });
+        for (const name of await readdir(cacheDir())) {
+            if (name.endsWith(".part")) await rm(join(cacheDir(), name), { force: true }).catch(() => { });
         }
     } catch { }
 
     await loadCacheIndex();
     await evictCache();
-    return { dir: CACHE_DIR };
+    return { dir: cacheDir() };
 }
 
 /** Full path of a cached file, or null. Touches the entry for LRU purposes. */
@@ -1249,7 +1251,7 @@ export async function cacheHas(_: IpcMainInvokeEvent, contentHash: string): Prom
     const entry = (await loadCacheIndex()).get(contentHash);
     if (!entry) return null;
 
-    const path = join(CACHE_DIR, entry.file);
+    const path = join(cacheDir(), entry.file);
     if (!existsSync(path)) {
         cacheIndex!.delete(contentHash);
         saveCacheIndex();
@@ -1265,11 +1267,11 @@ export async function cacheBegin(_: IpcMainInvokeEvent, contentHash: string, ext
     const cleanExt = ext.toLowerCase();
     if (!isValidHash(contentHash) || !(AUDIO_EXTS.has(cleanExt) || VIDEO_EXTS.has(cleanExt))) return null;
 
-    await mkdir(CACHE_DIR, { recursive: true });
-    allowedRoots.add(resolve(CACHE_DIR));
+    await mkdir(cacheDir(), { recursive: true });
+    allowedRoots.add(resolve(cacheDir()));
 
     const id = randomBytes(8).toString("hex");
-    const partPath = join(CACHE_DIR, `${contentHash}${cleanExt}.${id}.part`);
+    const partPath = join(cacheDir(), `${contentHash}${cleanExt}.${id}.part`);
 
     cacheTransfers.set(id, {
         stream: createWriteStream(partPath),
@@ -1277,7 +1279,7 @@ export async function cacheBegin(_: IpcMainInvokeEvent, contentHash: string, ext
         hash: contentHash,
         ext: cleanExt,
         partPath,
-        finalPath: join(CACHE_DIR, `${contentHash}${cleanExt}`),
+        finalPath: join(cacheDir(), `${contentHash}${cleanExt}`),
         written: 0,
         expected: size
     });

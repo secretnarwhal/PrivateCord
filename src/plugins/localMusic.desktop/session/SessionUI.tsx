@@ -15,7 +15,13 @@ import { React, TextInput, useMemo, useState } from "@webpack/common";
 import { MemberPerms, SessionMember, SessionTrack } from "./protocol";
 import { sessionStore, useSession } from "./SessionStore";
 
-const PERM_LABELS: { key: keyof MemberPerms; label: string; icon: string; }[] = [
+/**
+ * Lazy on purpose: this module sits in an import cycle with MiniPlayer
+ * (SessionUI → MiniPlayer → LibraryModal → SessionUI), so touching PATHS at
+ * module scope would read a const that hasn't initialized yet and take the
+ * whole plugins bundle down with a TDZ ReferenceError.
+ */
+const permLabels = (): { key: keyof MemberPerms; label: string; icon: string; }[] => [
     { key: "playback", label: "Playback control (slider, play/pause, skip)", icon: PATHS.play },
     { key: "addToQueue", label: "Add to the queue", icon: PATHS.queueAdd },
     { key: "reorderQueue", label: "Reorder & remove queued tracks", icon: PATHS.drag }
@@ -34,7 +40,7 @@ function MemberRow({ member }: { member: SessionMember; }) {
             </div>
 
             <div className={cl("row-actions")}>
-                {PERM_LABELS.map(({ key, label, icon }) => (
+                {permLabels().map(({ key, label, icon }) => (
                     <ControlButton
                         key={key}
                         label={`${label} — ${member.perms[key] ? "allowed" : "not allowed"}`}
@@ -109,7 +115,7 @@ function ListenerView() {
             <Span size="sm">{state}</Span>
 
             <div className={cl("session-perms-summary")}>
-                {PERM_LABELS.map(({ key, label, icon }) => (
+                {permLabels().map(({ key, label, icon }) => (
                     <span
                         key={key}
                         className={classes(cl("session-perm-chip"), session.myPerms[key] && cl("session-perm-chip-on"))}
