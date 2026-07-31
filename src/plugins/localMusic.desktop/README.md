@@ -324,8 +324,8 @@ every client and synchronized:
   `playbackRate` (≤2%) inside it
 
 A listener who joins mid-track shows "Syncing…" until the transfer lands, then
-drops in at the live position. The front of the queue is prefetched to
-everyone, so track transitions are gapless. A rejoin reuses the cache
+drops in at the live position. The next two queued tracks are prefetched to
+everyone, so track transitions are gapless even for large files. A rejoin reuses the cache
 (`file-have`) and starts instantly.
 
 ### The unified queue & permissions

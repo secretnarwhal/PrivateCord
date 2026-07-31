@@ -38,6 +38,8 @@ const RECONNECT_DELAYS = [2_000, 5_000, 15_000];
 /** how long a host remembers a dropped member's perms, waiting for a rejoin */
 const MEMBER_LINGER_MS = 5 * 60_000;
 const MANIFEST_TRACKS_PER_PART = 200;
+/** how many queued tracks past the current one are pushed to listeners ahead of time */
+const PREFETCH_DEPTH = 2;
 const CLOCK_SAMPLES = 8;
 
 const listeners = new Set<() => void>();
@@ -653,7 +655,7 @@ class SessionStore {
         }, START_LEAD_MS);
     }
 
-    /** Sends the current and next-up track to every listener that lacks them. */
+    /** Sends the current track and the next few queued ones to every listener that lacks them. */
     private prefetchToAll() {
         for (const userId of this.hostPeers.keys()) this.prefetchTo(userId);
     }
@@ -666,8 +668,10 @@ class SessionStore {
         const current = store.currentTrack && this.pathToTrackId.get(store.currentTrack.path);
         if (current) wanted.push(current);
 
-        const front = this.buildSessionQueue()[0];
-        if (front && !wanted.includes(front.trackId)) wanted.push(front.trackId);
+        // offer order is send order, so the soonest-needed track still streams first
+        for (const item of this.buildSessionQueue().slice(0, PREFETCH_DEPTH)) {
+            if (!wanted.includes(item.trackId)) wanted.push(item.trackId);
+        }
 
         for (const trackId of wanted) {
             const path = this.trackIdToPath.get(trackId);

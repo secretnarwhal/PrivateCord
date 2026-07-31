@@ -1,0 +1,37 @@
+/*
+ * The mask is what the capture actually records. It has to be opaque enough
+ * that nothing readable survives a screenshot, and — just as importantly — it
+ * must not disturb layout.
+ *
+ * An earlier version made the target `position: relative` so a ::after cover
+ * could be pinned to it. That re-parents every absolutely positioned
+ * descendant to the target, which visibly threw unrelated Discord UI around
+ * the page. Painting the container's own background and hiding its children
+ * covers the content just as well and touches no layout at all.
+ */
+
+.vc-cmask-target {
+    background: var(--background-base-lower, var(--background-secondary, #2b2d31)) !important;
+}
+
+/*
+ * opacity, not visibility or display: the real subtree has to stay hit-testable
+ * and keep its geometry. In mirror mode the overlay on top is click-through, so
+ * every click and scroll lands on this element underneath — `visibility: hidden`
+ * would make the DM list dead to the mouse, and `display: none` would collapse
+ * the box the overlay is aligned to.
+ */
+.vc-cmask-target > * {
+    opacity: 0 !important;
+}
+
+/*
+ * Blur mode leaves the shape of the UI visible, so a viewer can tell the client
+ * is alive, but nothing legible comes through. It is pointless while mirroring —
+ * the overlay covers it — and blurring a large subtree is expensive, so that
+ * case falls back to hiding outright.
+ */
+.vc-cmask-blur:not(.vc-cmask-mirrored) > * {
+    opacity: 1 !important;
+    filter: blur(18px) saturate(0.4);
+}

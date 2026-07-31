@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <!--
+        This page renders markup mirrored out of Discord, which contains other
+        people's message content. It runs sandboxed with no node access, and the
+        policy below denies everything except the styling and media the clone
+        needs to look right. 'unsafe-inline' covers our own inline style block
+        and Discord's style="" attributes; no remote script can load at all.
+    -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none';
+        style-src 'unsafe-inline' https:;
+        font-src https: data:;
+        img-src https: data: blob:;
+        media-src https: data: blob:;
+        script-src 'unsafe-inline';">
+    <title>CaptureMask</title>
+    <style>
+        html,
+        body {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background: transparent !important;
+            /* The window is click-through at the OS level; this is belt and braces. */
+            pointer-events: none;
+            user-select: none;
+        }
+
+        /* Each mirrored target is parked at its counterpart's viewport rect. */
+        .cm-slot {
+            position: fixed;
+            overflow: hidden;
+            contain: layout paint style;
+        }
+
+        /*
+         * The rebuilt ancestors exist only so Discord's descendant selectors
+         * keep matching. display:contents drops their boxes entirely so they
+         * cannot impose flex or grid layout on the clone.
+         */
+        [data-vc-cmask-chain] {
+            display: contents !important;
+        }
+
+        /* The clone fills its slot regardless of what sized it in the real tree. */
+        [data-vc-cmask-root] {
+            position: absolute !important;
+            inset: 0 !important;
+            margin: 0 !important;
+            max-width: none !important;
+            max-height: none !important;
+        }
+
+        /* Nothing in a mirror should animate — it repaints from scratch anyway. */
+        [data-vc-cmask-root] * {
+            animation: none !important;
+            transition: none !important;
+        }
+    </style>
+    <style id="cm-discord-css"></style>
+</head>
+
+<body>
+    <div id="cm-slots"></div>
+    <script>
+        "use strict";
+
+        const slots = document.getElementById("cm-slots");
+        const cssNode = document.getElementById("cm-discord-css");
+
+        let painted = 0;
+        const report = info => window.__captureMask?.report?.(info);
+
+        // Kept in step with SCROLLER_SELECTOR in mirror.ts so the offsets we
+        // receive line up index-for-index with the elements here.
+        const SCROLLER_SELECTOR = '[class*="scroller"]';
+
+        const DROP_TAGS = new Set([
+            "SCRIPT", "IFRAME", "OBJECT", "EMBED", "LINK", "BASE", "META", "NOSCRIPT", "FRAME", "FRAMESET"
+        ]);
+        const URL_ATTRS = ["href", "src", "xlink:href", "action", "formaction", "poster", "data"];
+
+        /**
+         * The mirrored markup is attacker-influenced: anyone who can DM you can
+         * put text in it. React escapes it on the Discord side, but this page
+         * inserts raw HTML, so strip anything executable before it lands.
+         */
+        function sanitise(root) {
+            const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);
+            const doomed = [];
+
+            for (let node = walker.currentNode; node; node = walker.nextNode()) {
+                if (DROP_TAGS.has(node.tagName)) {
+                    doomed.push(node);
+                    continue;
+                }
+
+                for (const attr of Array.from(node.attributes)) {
+                    const name = attr.name.toLowerCase();
+
+                    if (name.startsWith("on")) {
+                        node.removeAttribute(attr.name);
+                        continue;
+                    }
+
+                    if (URL_ATTRS.includes(name)) {
+                        const value = attr.value.trim().toLowerCase();
+                        // eslint-disable-next-line no-script-url
+                        if (value.startsWith("javascript:") || value.startsWith("vbscript:")) {
+                            node.removeAttribute(attr.name);
+                        }
+                    }
+                }
+            }
+
+            for (const node of doomed) node.remove();
+            return root;
+        }
+
+        function parse(html) {
+            // A detached document never runs scripts or fetches subresources,
+            // so sanitising happens before anything can act on the markup.
+            const doc = new DOMParser().parseFromString(`<body>${html}</body>`, "text/html");
+            return sanitise(doc.body);
+        }
+
+        function slotFor(id) {
+            let slot = slots.querySelector(`[data-slot="${CSS.escape(id)}"]`);
+            if (!slot) {
+                slot = document.createElement("div");
+                slot.className = "cm-slot";
+                slot.dataset.slot = id;
+                slots.appendChild(slot);
+            }
+            return slot;
+        }
+
+        function applyScroll(slot, offsets) {
+            if (!offsets) return;
+
+            const scrollers = slot.querySelectorAll(SCROLLER_SELECTOR);
+            for (let i = 0; i < scrollers.length && i < offsets.length; i++) {
+                scrollers[i].scrollTop = offsets[i];
+            }
+        }
+
+        function handle(msg) {
+            switch (msg.type) {
+                case "init": {
+                    cssNode.textContent = msg.css ?? "";
+
+                    const { chrome } = msg;
+                    if (chrome) {
+                        document.documentElement.className = chrome.htmlClass;
+                        document.documentElement.setAttribute("style", chrome.htmlStyle);
+                        document.body.className = chrome.bodyClass;
+                        // Our own layout rules live in the stylesheet above, so the
+                        // body's inline style can be adopted wholesale.
+                        document.body.setAttribute("style", chrome.bodyStyle);
+                    }
+                    break;
+                }
+
+                case "frame": {
+                    const { id, rect, html, scroll } = msg.frame;
+                    const slot = slotFor(id);
+
+                    slot.style.left = rect.x + "px";
+                    slot.style.top = rect.y + "px";
+                    slot.style.width = rect.width + "px";
+                    slot.style.height = rect.height + "px";
+
+                    slot.replaceChildren(...parse(html).childNodes);
+                    applyScroll(slot, scroll);
+
+                    painted++;
+                    report({ painted, nodes: slot.querySelectorAll("*").length });
+                    break;
+                }
+
+                case "scroll": {
+                    const slot = slots.querySelector(`[data-slot="${CSS.escape(msg.update.id)}"]`);
+                    if (slot) applyScroll(slot, msg.update.scroll);
+                    break;
+                }
+
+                case "drop": {
+                    slots.querySelector(`[data-slot="${CSS.escape(msg.id)}"]`)?.remove();
+                    break;
+                }
+
+                case "reset":
+                    slots.replaceChildren();
+                    break;
+            }
+        }
+
+        // Proves the preload's context bridge survived. Without this the page
+        // can never receive a frame, and the mirror stays blank forever.
+        report({ bridge: Boolean(window.__captureMask) });
+
+        window.__captureMask?.onMessage(msg => {
+            try {
+                handle(msg);
+            } catch (err) {
+                console.error("[CaptureMask] overlay failed to apply message", err);
+                report({ lastError: String(err) });
+            }
+        });
+    </script>
+</body>
+
+</html>
