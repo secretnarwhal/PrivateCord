@@ -46,7 +46,14 @@ export const TARGETS: Target[] = [
 
 export function findTargetElement(target: Target): HTMLElement | null {
     for (const selector of target.selector.split(",")) {
-        const el = document.querySelector<HTMLElement>(selector.trim());
+        const matches = Array.from(document.querySelectorAll<HTMLElement>(selector.trim()));
+        if (!matches.length) continue;
+
+        // Wrappers can share the readable class prefix with the panel we are
+        // after. Masking an outer one blanks unrelated chrome around it — the
+        // settings and voice panels, when a DM-list wrapper matches — so take
+        // the innermost match: the first one that contains no other match.
+        const el = matches.find(el => !matches.some(other => other !== el && el.contains(other)));
         if (el) return el;
     }
     return null;

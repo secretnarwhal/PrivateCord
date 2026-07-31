@@ -9,11 +9,9 @@ import { Logger } from "@utils/Logger";
 import definePlugin, { OptionType, PluginNative, StartAt } from "@utils/types";
 import { ApplicationStreamingStore, MediaEngineStore, React } from "@webpack/common";
 
-import { harvestCss } from "./css";
-import { readChrome, readDefs, TargetMirror } from "./mirror";
 import managedStyle from "./styles.css?managed";
 import { findTargetElement, type Target, TARGETS } from "./targets";
-import type { Frame, OverlayStatus, ScrollUpdate } from "./types";
+import type { BlockerStatus, Rect, TargetRects } from "./types";
 
 const Native = VencordNative.pluginHelpers.CaptureMask as PluginNative<typeof import("./native")>;
 
@@ -21,15 +19,23 @@ const logger = new Logger("CaptureMask");
 
 const TARGET_CLASS = "vc-cmask-target";
 const BLUR_CLASS = "vc-cmask-blur";
-const MIRRORED_CLASS = "vc-cmask-mirrored";
 
-/** How often the masked elements are re-resolved, since Discord swaps its tree. */
-const RESCAN_INTERVAL_MS = 500;
+/** How often engagement, mode and rects are re-checked. */
+const TICK_INTERVAL_MS = 400;
+
+/**
+ * Wait after the helper's ack before revealing content: the ack proves the
+ * SetWindowPos calls ran, this covers the compositor putting them on screen.
+ */
+const COVER_SLACK_MS = 50;
+
+/** How far a rect may drift from its confirmed cover and still count covered. */
+const COVER_TOLERANCE_PX = 3;
 
 const settings = definePluginSettings({
     engageWhen: {
         type: OptionType.SELECT,
-        description: "When to mask",
+        description: "When to censor",
         options: [
             {
                 label: "While screen sharing or streaming",
@@ -47,69 +53,66 @@ const settings = definePluginSettings({
     },
     maskDmList: {
         type: OptionType.BOOLEAN,
-        description: "Mask the DM list in the sidebar",
+        description: "Censor the DM list in the sidebar",
         default: true,
-        onChange: () => restart()
+        onChange: () => update()
     },
     maskDmChat: {
         type: OptionType.BOOLEAN,
-        description: "Mask the conversation when a DM or group DM is open",
+        description: "Censor the conversation when a DM or group DM is open",
         default: true,
-        onChange: () => restart()
-    },
-    mirror: {
-        type: OptionType.BOOLEAN,
-        description:
-            "Keep masked content readable to you by drawing it in a window that screen capture cannot see. "
-            + "Turn this off to simply black the content out. Windows and macOS only.",
-        default: true,
-        onChange: () => restart()
-    },
-    debugOpaque: {
-        type: OptionType.BOOLEAN,
-        description:
-            "Troubleshooting: build the overlay as an opaque magenta window instead of a transparent one. "
-            + "If magenta appears, transparency was the problem. Safe to stream with.",
-        default: false,
-        onChange: () => restart()
-    },
-    debugNoProtection: {
-        type: OptionType.BOOLEAN,
-        description:
-            "Troubleshooting: turn OFF capture exclusion for the overlay. Only use this while NOT streaming — "
-            + "with this on, the overlay is recorded like any other window and your DMs would be visible.",
-        default: false,
-        onChange: () => restart()
-    },
-    debugDevTools: {
-        type: OptionType.BOOLEAN,
-        description:
-            "Troubleshooting: open DevTools on the overlay window, to inspect the mirrored copy of the DOM. "
-            + "The DevTools window is not capture protected, so close it before streaming.",
-        default: false,
-        onChange: () => restart()
+        onChange: () => update()
     },
     maskStyle: {
         type: OptionType.SELECT,
-        description: "What the capture sees in place of the content",
+        description:
+            "Look of the visible mask (the fallback, and the brief cover while the blocker moves into place). "
+            + "The capture-side blocker itself is always a solid black box: Windows paints it below the "
+            + "compositor and offers no styling.",
         options: [
             { label: "Solid block", value: "blackout", default: true },
             { label: "Heavy blur", value: "blur" }
         ],
+        onChange: () => update()
+    },
+    useFallback: {
+        type: OptionType.BOOLEAN,
+        description:
+            "When the capture cannot be censored — you are sharing the Discord window itself, the blocker "
+            + "helper failed, or the platform is unsupported — mask the content inside Discord, visible to you "
+            + "too. Turn this off if sharing the client window means you actually want your DMs shown. "
+            + "Off also means a blocker failure mid-stream shows your DMs to the capture.",
+        default: true,
+        onChange: () => update()
+    },
+    debugTint: {
+        type: OptionType.BOOLEAN,
+        description:
+            "Troubleshooting: tint the blocker windows red so you can see where they are. "
+            + "Capture sees the same black boxes either way, so this is safe to stream with.",
+        default: false,
         onChange: () => restart()
     }
 });
 
 let active = false;
-let mirroring = false;
+/** Blocker windows are up and confirmed, so the real DOM is left untouched. */
+let blocking = false;
 let busy = false;
-let rescanTimer: number | undefined;
-/** Why the mirror is not running, when the failure happened on this side. */
+let tickTimer: number | undefined;
+/** Why the blocker is not running, when the failure happened on this side. */
 let localError: string | undefined;
+let lastSentRects = "";
 
-const mirrors = new Map<string, TargetMirror>();
 /** Every element we have put a mask class on, so cleanup never misses one. */
 const masked = new Set<HTMLElement>();
+/** The element currently backing each target id. */
+const liveEls = new Map<string, HTMLElement>();
+/** Rects (CSS px) confirmed to have a blocker window over them, per target. */
+const confirmedRects = new Map<string, Rect>();
+
+let domObserver: MutationObserver | undefined;
+let scanScheduled = false;
 
 function enabledTargets(): Target[] {
     return TARGETS.filter(t =>
@@ -130,13 +133,56 @@ function isSelfStreaming() {
     return false;
 }
 
+/** The id of whatever Discord is currently capturing, "" when unknown. */
+function captureSourceId(): string {
+    try {
+        // Cast: the source shape varies across Discord builds, so probe it
+        const source = MediaEngineStore?.getGoLiveSource?.() as any;
+        return String(source?.desktopSource?.id ?? source?.id ?? source?.sourceId ?? "");
+    } catch {
+        return "";
+    }
+}
+
 function shouldEngage() {
     if (!enabledTargets().length) return false;
     return settings.store.engageWhen === "always" || isSelfStreaming();
 }
 
+/**
+ * The blocker censors captures of the *screen*. A capture of the Discord
+ * window itself sees only Discord's own pixels — a separate window on top of
+ * it, protected or not, is simply not part of that surface — so sharing the
+ * Discord window means the blocker cannot help.
+ */
+function sharingOwnWindow() {
+    if (settings.store.engageWhen === "always") return false;
+    return captureSourceId().includes("window");
+}
+
+function readRect(el: HTMLElement): Rect {
+    const { x, y, width, height } = el.getBoundingClientRect();
+    return { x, y, width, height };
+}
+
+function rectCovered(id: string, rect: Rect) {
+    const c = confirmedRects.get(id);
+    if (!c) return false;
+
+    return Math.abs(c.x - rect.x) <= COVER_TOLERANCE_PX
+        && Math.abs(c.y - rect.y) <= COVER_TOLERANCE_PX
+        && Math.abs(c.width - rect.width) <= COVER_TOLERANCE_PX
+        && Math.abs(c.height - rect.height) <= COVER_TOLERANCE_PX;
+}
+
+function maskEl(el: HTMLElement) {
+    masked.add(el);
+    el.classList.add(TARGET_CLASS);
+    el.classList.toggle(BLUR_CLASS, settings.store.maskStyle === "blur");
+}
+
 function unmask(el: HTMLElement) {
-    el.classList.remove(TARGET_CLASS, BLUR_CLASS, MIRRORED_CLASS);
+    el.classList.remove(TARGET_CLASS, BLUR_CLASS);
     masked.delete(el);
 }
 
@@ -144,11 +190,7 @@ function clearMasks() {
     for (const el of [...masked]) unmask(el);
 }
 
-/**
- * Resolves each enabled target and makes sure exactly those elements carry the
- * mask. Runs on a timer because Discord remounts these subtrees freely, and a
- * remounted element would otherwise come back unmasked mid-stream.
- */
+/** Puts the visible mask on every enabled target — the fallback cover. */
 function applyMasks() {
     const seen = new Set<HTMLElement>();
 
@@ -159,209 +201,273 @@ function applyMasks() {
         if (!el) continue;
 
         seen.add(el);
-        masked.add(el);
-
-        el.classList.add(TARGET_CLASS);
-        el.classList.toggle(BLUR_CLASS, settings.store.maskStyle === "blur");
-        el.classList.toggle(MIRRORED_CLASS, mirroring);
+        maskEl(el);
     }
 
     for (const el of [...masked]) {
         if (!seen.has(el)) unmask(el);
     }
-
-    return seen;
 }
-
-const sendFrame = (frame: Frame) => {
-    Native.send({ type: "frame", frame }).catch(err => logger.error("failed to send frame", err));
-};
-
-const sendScroll = (update: ScrollUpdate) => {
-    Native.send({ type: "scroll", update }).catch(() => { /* next frame will resync */ });
-};
-
-/** Small enough that no single IPC message carries the whole stylesheet set. */
-const CSS_CHUNK_SIZE = 512 * 1024;
 
 /**
- * Ships the harvested CSS to the overlay in pieces. The full set is tens of
- * megabytes, which is what made sending it as one message fail silently.
+ * Re-resolves the target elements and masks any that appeared without a
+ * confirmed blocker over their rect. Called from a pre-paint hook, so a DM
+ * panel that just mounted is covered before the browser ever composites it —
+ * a frame that never painted cannot have been captured.
  */
-async function sendCss({ css, sheets, failed }: Awaited<ReturnType<typeof harvestCss>>) {
-    for (let i = 0; i < css.length; i += CSS_CHUNK_SIZE) {
-        await Native.send({ type: "css-chunk", text: css.slice(i, i + CSS_CHUNK_SIZE) });
-    }
-
-    await Native.send({ type: "css-done", sheets, failed });
-    logger.info(`sent ${css.length} bytes of css from ${sheets} sheets (${failed} skipped)`);
-}
-
-function syncMirrors() {
-    if (!mirroring) return;
+function detectNewTargets(): boolean {
+    let changed = false;
 
     for (const target of enabledTargets()) {
-        let mirror = mirrors.get(target.id);
-        if (!mirror) {
-            mirror = new TargetMirror(target, sendFrame, sendScroll);
-            mirrors.set(target.id, mirror);
+        if (!target.isRelevant()) {
+            liveEls.delete(target.id);
+            continue;
         }
 
-        if (!mirror.sync()) {
-            Native.send({ type: "drop", id: target.id }).catch(() => { });
+        const el = findTargetElement(target);
+        if (!el) {
+            liveEls.delete(target.id);
+            continue;
         }
+
+        if (liveEls.get(target.id) === el) continue;
+        liveEls.set(target.id, el);
+        changed = true;
+
+        // A remount at the same place is already behind a black box; only an
+        // uncovered rect needs the visible cover until the blocker confirms.
+        if (!rectCovered(target.id, readRect(el))) maskEl(el);
     }
 
-    for (const [id, mirror] of [...mirrors]) {
-        if (enabledTargets().some(t => t.id === id)) continue;
+    return changed;
+}
 
-        mirror.detach();
-        mirrors.delete(id);
-        Native.send({ type: "drop", id }).catch(() => { });
+/**
+ * Watches for target subtrees mounting. requestAnimationFrame runs before the
+ * frame is painted, so masking inside it beats the first paint of new content.
+ */
+function watchDom() {
+    if (domObserver) return;
+
+    domObserver = new MutationObserver(() => {
+        // Fast path: every relevant target is known and still attached
+        let missing = false;
+        for (const t of enabledTargets()) {
+            if (!t.isRelevant()) continue;
+            const el = liveEls.get(t.id);
+            if (!el || !el.isConnected) { missing = true; break; }
+        }
+        if (!missing || scanScheduled) return;
+
+        scanScheduled = true;
+        requestAnimationFrame(() => {
+            scanScheduled = false;
+            if (detectNewTargets()) void syncBlockers(true);
+        });
+    });
+    domObserver.observe(document.body, { childList: true, subtree: true });
+}
+
+function unwatchDom() {
+    domObserver?.disconnect();
+    domObserver = undefined;
+    scanScheduled = false;
+}
+
+/**
+ * Ships current rects, waits for the helper to acknowledge them, then lifts
+ * the visible mask off anything now provably behind a black box. Serialised
+ * through a chain because the tick and the DOM observer both call it.
+ */
+let syncChain: Promise<void> = Promise.resolve();
+
+function syncBlockers(force = false) {
+    syncChain = syncChain
+        .then(() => doSyncBlockers(force))
+        .catch(err => logger.error("blocker sync failed", err));
+    return syncChain;
+}
+
+async function doSyncBlockers(force: boolean) {
+    if (!blocking) return;
+
+    const rects: TargetRects["rects"] = [];
+    for (const [id, el] of liveEls) {
+        if (!el.isConnected) continue;
+        rects.push({ id, rect: readRect(el) });
+    }
+
+    const payload: TargetRects = {
+        rects,
+        viewport: { width: window.innerWidth, height: window.innerHeight }
+    };
+
+    const serialised = JSON.stringify(payload);
+    if (force || serialised !== lastSentRects) {
+        lastSentRects = serialised;
+
+        await Native.setRects(payload);
+        await Native.sync();
+        await new Promise(r => setTimeout(r, COVER_SLACK_MS));
+        if (!blocking) return;
+
+        for (const { id, rect } of rects) confirmedRects.set(id, rect);
+    }
+
+    for (const el of [...masked]) {
+        for (const [id, live] of liveEls) {
+            if (live === el && rectCovered(id, readRect(el))) {
+                unmask(el);
+                break;
+            }
+        }
     }
 }
 
-function stopMirrors() {
-    for (const mirror of mirrors.values()) mirror.detach();
-    mirrors.clear();
-}
-
-async function activate() {
-    active = true;
-
-    // The mask goes on before anything else, so from this point the content is
-    // covered whether or not the overlay ever comes up.
+async function engageBlocker() {
+    // Cover first: from this moment the content is hidden from capture
+    // whether or not the blocker ever comes up. The DOM watcher starts now
+    // too, so anything mounting during helper startup is covered pre-paint.
     applyMasks();
+    watchDom();
 
-    if (!settings.store.mirror) return;
+    const result = await Native.start({ debugTint: settings.store.debugTint });
+    if (!result.ok) {
+        localError = result.reason;
+        blocking = false;
+        unwatchDom();
+        if (!settings.store.useFallback) clearMasks();
+        logger.warn("blocker unavailable:", result.reason);
+        return;
+    }
 
     localError = undefined;
-
-    try {
-        if (!await Native.isSupported()) {
-            logger.info("this platform cannot hide a window from screen capture; masking without a mirror");
-            return;
-        }
-
-        const chrome = readChrome();
-        const harvested = await harvestCss();
-        const result = await Native.start({
-            chrome,
-            defs: readDefs(),
-            ids: enabledTargets().map(t => t.id),
-            debugOpaque: settings.store.debugOpaque,
-            debugNoProtection: settings.store.debugNoProtection,
-            debugDevTools: settings.store.debugDevTools
-        });
-
-        if (!result.ok) {
-            localError = result.reason;
-            logger.warn("mirror unavailable, masking without it:", result.reason);
-            return;
-        }
-
-        if (!active) {
-            // Deactivated while we were setting up
-            await Native.stop();
-            return;
-        }
-
-        await sendCss(harvested);
-
-        mirroring = true;
-        syncMirrors();
-
-        // Let the first frames land before the real content stops painting,
-        // otherwise the panel blinks empty for a moment.
-        setTimeout(() => {
-            if (mirroring) applyMasks();
-        }, 120);
-    } catch (err) {
-        localError = String(err);
-        logger.error("failed to start the mirror, masking without it", err);
-    }
+    blocking = true;
+    detectNewTargets();
+    await syncBlockers(true);
 }
 
-async function deactivate() {
-    active = false;
-    mirroring = false;
-    stopMirrors();
+async function disengageBlocker() {
+    blocking = false;
+    unwatchDom();
+    lastSentRects = "";
+    confirmedRects.clear();
+    liveEls.clear();
 
     try {
         await Native.stop();
     } catch (err) {
-        logger.error("failed to tear down the overlay", err);
+        logger.error("failed to stop the blocker", err);
     }
+}
 
-    clearMasks();
+async function tick() {
+    if (busy) return;
+    busy = true;
+
+    try {
+        if (!shouldEngage()) {
+            if (active) {
+                active = false;
+                await disengageBlocker();
+                clearMasks();
+                localError = undefined;
+            }
+            return;
+        }
+
+        active = true;
+        const blockerUseless = sharingOwnWindow() || !(await Native.isSupported());
+
+        if (blockerUseless) {
+            if (blocking) await disengageBlocker();
+            if (settings.store.useFallback) applyMasks();
+            else clearMasks();
+            return;
+        }
+
+        if (!blocking) {
+            await engageBlocker();
+            return;
+        }
+
+        // Blocker mode, already running: verify it is still alive — a dead
+        // helper censors nothing, and silently showing DMs to the capture is
+        // the one failure this plugin must never shrug at.
+        const status = await Native.getStatus();
+        if (status.helper !== "ready") {
+            localError = status.lastError ?? "the blocker helper stopped";
+            blocking = false;
+            unwatchDom();
+            confirmedRects.clear();
+            if (settings.store.useFallback) applyMasks();
+            else clearMasks();
+            return;
+        }
+
+        detectNewTargets();
+        await syncBlockers();
+    } catch (err) {
+        logger.error("tick failed", err);
+        localError = String(err);
+        if (active && settings.store.useFallback) applyMasks();
+    } finally {
+        busy = false;
+    }
 }
 
 function update() {
-    if (busy) return;
-
-    const wanted = shouldEngage();
-    if (wanted === active) {
-        if (active) {
-            applyMasks();
-            syncMirrors();
-        }
-        return;
-    }
-
-    busy = true;
-    (wanted ? activate() : deactivate())
-        .catch(err => logger.error("state change failed", err))
-        .finally(() => { busy = false; });
+    void tick();
 }
 
-/** Rebuilds from scratch, for settings that change what the overlay was told. */
+/** For settings that change what the helper was told at start. */
 function restart() {
-    if (!active) {
-        update();
-        return;
-    }
+    if (!active) return;
 
-    busy = true;
-    deactivate()
-        .then(() => activate())
-        .catch(err => logger.error("restart failed", err))
-        .finally(() => { busy = false; });
+    void (async () => {
+        await disengageBlocker();
+        await tick();
+    })();
 }
 
 const onStoreChange = () => update();
+const onResize = () => { if (blocking) void syncBlockers(); };
 
-/**
- * A created, protected overlay window can still paint nothing, so "is it
- * working" cannot be answered from the renderer alone. This reports which stage
- * the overlay actually reached.
- */
-function verdict(status: OverlayStatus): [string, string] {
-    if (!settings.store.mirror) return ["#f0b232", "Mirroring is off — content is masked for you too."];
-    if (!status.supported) return ["#f0b232", "This platform cannot hide a window from screen capture, so only masking is active."];
-    if (localError) return ["#f23f43", `Could not start the mirror: ${localError}`];
-    if (status.lastError) return ["#f23f43", `Overlay error: ${status.lastError}`];
-    if (!status.created) return ["#f23f43", "The overlay window was never created."];
-    if (!status.loaded) return ["#f23f43", "The overlay window exists but its page never loaded."];
-    if (!status.bridge) return ["#f23f43", "The overlay loaded but its preload bridge did not attach, so no frames can reach it."];
-    if (!status.painted) return ["#f23f43", "The bridge is up but no frames have arrived — check that a DM target is on screen."];
-    if (!status.nodes) return ["#f23f43", "Frames are arriving but rendering empty — the mirrored markup is not surviving the copy."];
-    if (!status.cssBytes) return ["#f23f43", "Markup is mirroring but no CSS reached the overlay, so it renders unstyled."];
-    if (!status.visible) return ["#f0b232", "The overlay is hidden. It only shows while the Discord window is focused."];
+function verdict(status: BlockerStatus): [string, string] {
+    if (!status.supported) {
+        return settings.store.useFallback
+            ? ["#f0b232", "This platform has no capture censor bar, so the content is masked for you too."]
+            : ["#f23f43", "This platform has no capture censor bar and the fallback is off — nothing is protected."];
+    }
+    if (active && !blocking && sharingOwnWindow()) {
+        return settings.store.useFallback
+            ? ["#f0b232", "You are sharing the Discord window itself — the blocker cannot censor a window capture, so the visible mask is covering instead."]
+            : ["#80848e", "You are sharing the Discord window itself and the fallback is off, so your DMs are shown — as configured."];
+    }
+    if (localError) {
+        return settings.store.useFallback
+            ? ["#f23f43", `Blocker unavailable, the visible mask is covering: ${localError}`]
+            : ["#f23f43", `Blocker unavailable and the fallback is off — DMs are visible to capture: ${localError}`];
+    }
+    if (status.helper === "failed") return ["#f23f43", `The blocker helper failed: ${status.lastError ?? "unknown error"}`];
+    if (!active) return ["#80848e", "Idle — will engage when you stream."];
+    if (!blocking) return ["#f0b232", "Starting up — content is masked until the blocker confirms."];
+    if (!status.blockers) return ["#f0b232", "Blocker is ready but no DM panel is on screen to censor."];
 
-    return ["#23a55a", "Mirror is live — you should see your DMs, and capture should not."];
+    return ["#23a55a", "Censoring capture — you see everything; the capture sees black boxes over your DMs."];
 }
 
 function StatusPanel() {
-    const [status, setStatus] = React.useState<OverlayStatus | null>(null);
+    const [status, setStatus] = React.useState<BlockerStatus | null>(null);
 
     React.useEffect(() => {
         let alive = true;
-        const tick = () => Native.getStatus()
+        const poll = () => Native.getStatus()
             .then(s => { if (alive) setStatus(s); })
             .catch(() => { /* main process not reachable */ });
 
-        tick();
-        const id = setInterval(tick, 1000);
+        poll();
+        const id = setInterval(poll, 1000);
         return () => { alive = false; clearInterval(id); };
     }, []);
 
@@ -369,19 +475,15 @@ function StatusPanel() {
 
     const [colour, message] = verdict(status);
     const rows: Array<[string, string]> = [
-        ["Masking now", active ? "yes" : "no"],
-        ["Mirroring", mirroring ? "yes" : "no"],
-        ["Overlay created", status.created ? "yes" : "no"],
-        ["Page loaded", status.loaded ? "yes" : "no"],
-        ["Preload bridge", status.bridge ? "yes" : "no"],
-        ["Frames painted", String(status.painted)],
-        ["Nodes in last frame", String(status.nodes)],
-        ["Overlay visible", status.visible ? "yes" : "no"],
-        ["Overlay bounds", status.bounds ?? "—"],
+        ["Engaged", active ? "yes" : "no"],
+        ["Mode", blocking ? "capture blocker" : active ? (settings.store.useFallback ? "visible mask" : "unprotected") : "—"],
+        ["Fallback", settings.store.useFallback ? "enabled" : "disabled"],
+        ["Helper", status.helper],
+        ["Blockers up", String(status.blockers)],
         ["Zoom scale", status.scale ? status.scale.toFixed(3) : "—"],
-        ["Stylesheets read", `${(status.cssSheets ?? 0) - (status.cssFailed ?? 0)} / ${status.cssSheets ?? 0}`],
-        ["CSS applied", status.cssBytes ? `${Math.round(status.cssBytes / 1024)} KB` : "—"],
-        ["Furthest stage", status.stage]
+        ["Blocker bounds", status.bounds ?? "—"],
+        ["Furthest stage", status.stage],
+        ["Last error", localError ?? status.lastError ?? "—"]
     ];
 
     return (
@@ -410,8 +512,8 @@ function StatusPanel() {
 export default definePlugin({
     name: "CaptureMask",
     description:
-        "Hides your DMs from screen capture. The content is drawn in a window that screen recorders cannot see, "
-        + "so you can still read it while everyone watching your stream sees a blank panel.",
+        "Hides your DMs from screen capture without hiding them from you: invisible censor windows black out "
+        + "those regions in anything that records the screen, while Discord itself stays completely untouched.",
     tags: ["Privacy", "Voice"],
     authors: [{ name: "Ryan", id: 0n }],
     settings,
@@ -424,21 +526,25 @@ export default definePlugin({
     start() {
         ApplicationStreamingStore?.addChangeListener?.(onStoreChange);
         MediaEngineStore?.addChangeListener?.(onStoreChange);
+        window.addEventListener("resize", onResize);
 
-        rescanTimer = window.setInterval(update, RESCAN_INTERVAL_MS);
+        tickTimer = window.setInterval(tick, TICK_INTERVAL_MS);
         update();
     },
 
     stop() {
         ApplicationStreamingStore?.removeChangeListener?.(onStoreChange);
         MediaEngineStore?.removeChangeListener?.(onStoreChange);
+        window.removeEventListener("resize", onResize);
 
-        if (rescanTimer !== undefined) clearInterval(rescanTimer);
-        rescanTimer = undefined;
+        if (tickTimer !== undefined) clearInterval(tickTimer);
+        tickTimer = undefined;
 
-        stopMirrors();
-        mirroring = false;
         active = false;
+        blocking = false;
+        unwatchDom();
+        confirmedRects.clear();
+        liveEls.clear();
         Native.stop().catch(() => { });
         clearMasks();
     }

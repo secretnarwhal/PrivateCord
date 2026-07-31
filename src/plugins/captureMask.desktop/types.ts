@@ -12,83 +12,41 @@ export interface Rect {
     height: number;
 }
 
-/** Classes and inline custom properties that Discord hangs its theme off of. */
-export interface Chrome {
-    htmlClass: string;
-    htmlStyle: string;
-    bodyClass: string;
-    bodyStyle: string;
-}
-
-/** A full repaint of one target: markup, geometry and scroll state. */
-export interface Frame {
-    id: string;
-    rect: Rect;
-    html: string;
-    /** scrollTop of every scrollable descendant, in document order */
-    scroll: number[];
+/** The regions to blank in capture, plus the viewport that scales them. */
+export interface TargetRects {
+    rects: Array<{ id: string; rect: Rect; }>;
     /** Discord's viewport in CSS px, used to derive the zoom scale */
     viewport: { width: number; height: number; };
 }
 
-/** A scroll-only update, so dragging the DM list doesn't reserialize it. */
-export interface ScrollUpdate {
-    id: string;
-    scroll: number[];
+export interface BlockerStartOptions {
+    /**
+     * Troubleshooting: draw the blockers red-tinted so they can be seen on the
+     * monitor. Capture shows the same black boxes either way — WDA_MONITOR
+     * blanks the whole window rect in capture regardless of its alpha.
+     */
+    debugTint?: boolean;
 }
 
-/** Discord's styling, read as text in the renderer where it is same-origin. */
-export interface HarvestedCss {
-    css: string;
-    sheets: number;
-    failed: number;
+export interface BlockerStartResult {
+    ok: boolean;
+    reason?: string;
 }
 
-export interface OverlayStartOptions {
-    chrome: Chrome;
-    /** Global SVG mask/clipPath definitions the cloned markup references by id */
-    defs: string;
-    /** ids of the targets that will be mirrored */
-    ids: string[];
-    /** Troubleshooting: build the window opaque, to test transparency support. */
-    debugOpaque?: boolean;
-    /** Troubleshooting: skip capture exclusion, to test whether it is what hides the window. */
-    debugNoProtection?: boolean;
-    /** Troubleshooting: open DevTools on the overlay to inspect the mirrored DOM. */
-    debugDevTools?: boolean;
-}
-
-/** How far the overlay got, so a hard failure reads differently from a blank mirror. */
-export interface OverlayStatus {
-    /** false on Linux, where nothing can be hidden from capture */
+/** How far the blocker got, so a hard failure reads differently from a no-op. */
+export interface BlockerStatus {
+    /** false everywhere but Windows — WDA_MONITOR is a Win32 display affinity */
     supported: boolean;
-    created: boolean;
-    loaded: boolean;
+    helper: "stopped" | "starting" | "ready" | "failed";
+    /** blocker windows currently alive */
+    blockers: number;
+    /** blockers are currently shown (the Discord window is visible) */
     visible: boolean;
-    contentProtection: boolean;
-    /** the preload's context bridge reached the page */
-    bridge: boolean;
-    /** frames the overlay has applied */
-    painted: number;
-    /** elements in the last applied frame; 0 means markup arrived but rendered empty */
-    nodes: number;
+    /** Derived zoom factor rects are scaled by; 1 means Discord is at 100% */
+    scale?: number;
+    /** last physical-pixel bounds pushed, for eyeballing alignment */
+    bounds?: string;
     /** Furthest point start() reached; survives teardown so failures stay legible. */
     stage: string;
-    /** Derived zoom factor the overlay is scaling by; 1 means Discord is at 100% */
-    scale?: number;
-    /** Stylesheets read in the renderer, and the bytes the overlay applied */
-    cssSheets?: number;
-    cssFailed?: number;
-    cssBytes?: number;
-    bounds?: string;
     lastError?: string;
-}
-
-export interface OverlayStartResult {
-    ok: boolean;
-    /**
-     * Set when the overlay could not be created, or when the platform cannot
-     * exclude a window from capture. The renderer keeps the mask up either way.
-     */
-    reason?: string;
 }
