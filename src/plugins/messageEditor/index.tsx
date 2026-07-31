@@ -4,22 +4,17 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-import "./styles.css";
-
 import { NavContextMenuPatchCallback } from "@api/ContextMenu";
 import { get as dsGet, set as dsSet } from "@api/DataStore";
 import { updateMessage } from "@api/MessageUpdater";
 import { definePluginSettings } from "@api/Settings";
 import { Button } from "@components/Button";
 import { PencilIcon, RestartIcon } from "@components/Icons";
-import { classNameFactory } from "@utils/css";
 import { useForceUpdater } from "@utils/react";
 import definePlugin, { OptionType } from "@utils/types";
 import { Channel, Message } from "@vencord/discord-types";
 import { MessageFlags } from "@vencord/discord-types/enums";
 import { ChannelStore, Menu, MessageActions, MessageStore, MessageTypeSets } from "@webpack/common";
-
-const cl = classNameFactory("vc-msgedit-");
 
 const DATA_KEY = "MessageEditor_edits";
 
@@ -128,25 +123,12 @@ function restoreEvery() {
             render(channelId, messageId, edits[channelId][messageId].original);
 }
 
-/** Re-render edited messages without touching their content, for settings that only affect the decoration. */
-function rerenderEdited() {
-    for (const channelId in edits)
-        for (const messageId in edits[channelId])
-            updateMessage(channelId, messageId);
-}
-
 const settings = definePluginSettings({
     persistEdits: {
         type: OptionType.BOOLEAN,
         description: "Keep local edits after a restart. Turn this off to have them last only until you reload Discord.",
         default: true,
         onChange: persist
-    },
-    showIndicator: {
-        type: OptionType.BOOLEAN,
-        description: "Mark locally edited messages, so you don't mistake your own edit for what was really said",
-        default: true,
-        onChange: rerenderEdited
     },
     restoreAll: {
         type: OptionType.COMPONENT,
@@ -233,16 +215,6 @@ export default definePlugin({
                 }
             };
         }
-    },
-
-    renderMessageDecoration({ message }) {
-        if (!settings.store.showIndicator || !getEdit(message.channel_id, message.id)) return null;
-
-        return (
-            <span className={cl("indicator")} title="You edited this message locally. Only you see it this way.">
-                local edit
-            </span>
-        );
     },
 
     /**
