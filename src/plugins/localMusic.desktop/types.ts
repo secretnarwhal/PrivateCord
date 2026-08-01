@@ -71,6 +71,83 @@ export interface DownloadJob {
     message: string;
 }
 
+/** One timed word inside a line. Only present when the source carried word timing. */
+export interface LyricWord {
+    /** seconds from the start of the track */
+    start: number;
+    end: number;
+    text: string;
+}
+
+export interface LyricLine {
+    start: number;
+    /** seconds; the next line's start when the format doesn't give one */
+    end: number;
+    text: string;
+    /**
+     * Per-word timing, when the source had it (enhanced LRC, SYLT). Absent lines
+     * get their words timed by length at render time, which is what makes the
+     * sweep look the same whichever source a track ended up matching.
+     */
+    words?: LyricWord[];
+}
+
+/** Where a set of lyrics came from, in the order the providers are tried. */
+export type LyricsSource = "sidecar" | "embedded" | "netease" | "lrclib";
+
+/** A provider that a candidate can be fetched back from on its own. */
+export type LyricsProvider = "lrclib" | "netease";
+
+/**
+ * One result of a manual lyrics search. Carries enough to re-fetch the exact
+ * same lyrics later, so a track the user corrected by hand stays corrected.
+ */
+export interface LyricsCandidate {
+    provider: LyricsProvider;
+    /** provider-native id */
+    id: string;
+    title: string;
+    artist: string;
+    album: string;
+    /** seconds; 0 when the provider didn't say */
+    duration: number;
+    /** true when this one carries per-word timing */
+    wordLevel: boolean;
+    synced: boolean;
+}
+
+export interface Lyrics {
+    lines: LyricLine[];
+    /** false when all we found was an untimed block of text */
+    synced: boolean;
+    /** true when at least one line carried real per-word timing */
+    wordLevel: boolean;
+    source: LyricsSource;
+    /** the track is known to be an instrumental — show that rather than "not found" */
+    instrumental: boolean;
+}
+
+/** What the renderer knows about a track when it asks for its lyrics. */
+export interface LyricsRequest {
+    /** null for a listen-along listener, who has no local file to look beside */
+    path: string | null;
+    title: string;
+    artist: string;
+    album: string;
+    /** seconds; 0 when not known yet */
+    duration: number;
+    /** false to use only what is already on disk (sidecar, tags, cache) */
+    allowNetwork: boolean;
+    /** whether to spend a request looking for per-word timing before falling back */
+    wordLevel: boolean;
+    /**
+     * A candidate the user picked by hand for this track. When set it is fetched
+     * directly and every other provider, including the local ones, is skipped —
+     * an override the file could silently outrank would not be much of one.
+     */
+    override?: LyricsCandidate;
+}
+
 export type SearchSource = "youtube" | "ytmusic";
 
 export interface SearchResult {

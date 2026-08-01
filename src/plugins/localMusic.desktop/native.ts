@@ -15,9 +15,11 @@ import { createServer, IncomingMessage, Server, ServerResponse } from "http";
 import { AddressInfo } from "net";
 import { basename, extname, join, resolve, sep } from "path";
 
+import { lookupLyrics, searchLyricCandidates } from "./lyrics";
 import { readTags } from "./tags";
 import type {
-    DownloadJob, SearchResult, SearchSource, ServerInfo, Track, TrackMetadata, YtDlpInfo, YtDlpOptions
+    DownloadJob, Lyrics, LyricsCandidate, LyricsRequest, SearchResult, SearchSource, ServerInfo,
+    Track, TrackMetadata, YtDlpInfo, YtDlpOptions
 } from "./types";
 
 // The renderer streams media from our loopback server, so 127.0.0.1 needs to be
@@ -381,6 +383,24 @@ export async function readMetadataBatch(_: IpcMainInvokeEvent, paths: string[]):
     }
 
     return result;
+}
+
+/**
+ * Lyrics for whatever is playing. The path is only consulted when it is inside a
+ * folder the user opened — a listen-along listener passes none at all and is
+ * matched on its tags alone.
+ */
+export async function getLyrics(_: IpcMainInvokeEvent, req: LyricsRequest): Promise<Lyrics | null> {
+    return lookupLyrics(req, !!req.path && isPathAllowed(req.path));
+}
+
+/** Candidates for the manual "Fix lyrics…" picker. */
+export async function searchLyrics(
+    _: IpcMainInvokeEvent,
+    query: string,
+    duration: number
+): Promise<LyricsCandidate[]> {
+    return searchLyricCandidates(query, duration);
 }
 
 // #region media keys

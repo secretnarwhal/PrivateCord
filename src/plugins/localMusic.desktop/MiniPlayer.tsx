@@ -10,6 +10,7 @@ import { formatDuration } from "@utils/text";
 import { React, ReactDOM, Tooltip, useCallback, useEffect, useRef, useState } from "@webpack/common";
 
 import { openLibrary } from "./LibraryModal";
+import { LyricsView } from "./LyricsView";
 import {
     type FloatAnchor,
     MAX_VIDEO_HEIGHT, MAX_VIDEO_WIDTH, MIN_VIDEO_HEIGHT, MIN_VIDEO_WIDTH,
@@ -68,6 +69,8 @@ export const PATHS = {
     // "drag_indicator": the six-dot grip on a reorderable row
     drag: "M9 20c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm0-6c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm0-6c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm6 0c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm0 6c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm0 6c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z",
     close: "M18.3 5.71c-.39-.39-1.02-.39-1.41 0L12 10.59 7.11 5.7c-.39-.39-1.02-.39-1.41 0-.39.39-.39 1.02 0 1.41L10.59 12 5.7 16.89c-.39.39-.39 1.02 0 1.41.39.39 1.02.39 1.41 0L12 13.41l4.89 4.89c.39.39 1.02.39 1.41 0 .39-.39.39-1.02 0-1.41L13.41 12l4.89-4.89c.38-.38.38-1.02 0-1.4z",
+    // "lyrics": a speech bubble with a note knocked out of it (opposite winding)
+    lyrics: "M2 4c0-1.1.9-2 2-2h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H6l-3.15 3.15c-.31.31-.85.09-.85-.36V4zm11 2c-.55 0-1 .45-1 1v3.76c-.31-.16-.65-.26-1-.26-1.38 0-2.5 1.12-2.5 2.5S9.62 15.5 11 15.5s2.5-1.12 2.5-2.5V8H16c.55 0 1-.45 1-1s-.45-1-1-1h-3z",
     // "group": two heads and shoulders — the listen along session
     group: "M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V18c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-1.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V18c0 .55.45 1 1 1h4c.55 0 1-.45 1-1v-1.5c0-2.33-4.67-3.5-7-3.5z"
 } as const;
@@ -384,7 +387,7 @@ function clampFloat(anchor: FloatAnchor, width: number, height: number): FloatAn
  */
 function MediaPanel() {
     const player = usePlayer();
-    const { showVideo } = settings.use(["showVideo"]);
+    const { showVideo, showLyrics } = settings.use(["showVideo", "showLyrics"]);
     const spacerRef = useRef<HTMLDivElement>(null);
     const panelRef = useRef<HTMLDivElement>(null);
     const clickTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -640,7 +643,9 @@ function MediaPanel() {
     const track = player.currentTrack;
     const art = track && player.artUrl(track);
     const accent = useArtAccent(art || null);
-    const showingVideo = player.hasVideo && showVideo;
+    // lyrics outrank the video for the same reason the visualizer does when the
+    // video is switched off: the panel becomes a now-playing card rather than a viewport
+    const showingVideo = player.hasVideo && showVideo && !showLyrics;
     const queued = isListener ? session.sessionQueue.length : player.queueEntries.length;
 
     const width = anchor ? player.videoWidth || anchor.width : 0;
@@ -688,7 +693,7 @@ function MediaPanel() {
                 : (
                     <>
                         {art && <div className={cl("backdrop")} style={{ backgroundImage: `url(${art})` }} />}
-                        <Visualizer accent={accent} />
+                        {showLyrics ? <LyricsView /> : <Visualizer accent={accent} />}
                     </>
                 )}
 
@@ -721,7 +726,7 @@ function MediaPanel() {
                     // the strip around them is a drag handle while floating
                     onPointerDown={e => e.stopPropagation()}
                 >
-                    {player.hasVideo && (
+                    {player.hasVideo && !showLyrics && (
                         <ControlButton
                             label={showVideo ? "Hide the video" : "Show the video"}
                             onClick={() => settings.store.showVideo = !settings.store.showVideo}
@@ -729,6 +734,14 @@ function MediaPanel() {
                             <Icon path={showVideo ? PATHS.videoOff : PATHS.video} label="toggle video" size={16} />
                         </ControlButton>
                     )}
+
+                    <ControlButton
+                        label={showLyrics ? "Hide lyrics" : "Show lyrics"}
+                        className={showLyrics ? cl("button-active") : undefined}
+                        onClick={() => settings.store.showLyrics = !settings.store.showLyrics}
+                    >
+                        <Icon path={PATHS.lyrics} label="toggle lyrics" size={16} />
+                    </ControlButton>
 
                     <ControlButton
                         label={queued ? `Up next (${queued})` : "Up next"}

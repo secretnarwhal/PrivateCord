@@ -31,7 +31,7 @@ result thumbnails.
 
 ```
 ┌────────────────────────────┐◹
-│ ▣ track — artist 🎞 ☰ ⧉ ⇱ ⛶ │  <- track strip (art thumb · video toggle/queue/library/pop out/fullscreen)
+│ ▣ track — artist 🎞♪☰👥⧉⇱⛶ │  <- track strip (art thumb · video/lyrics/queue/listen along/library/pop out/fullscreen)
 │      video, or             │
 │   ▂▄▆█▆▄▂ visualizer ▂▄▆█▆ │
 │ ▬▬▬▬▬▬▬▬●▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬ │  <- seek bar, click or drag
@@ -93,6 +93,115 @@ element. That is also why the loopback server sends
 `Access-Control-Allow-Origin: *` and the element uses `crossorigin="anonymous"`:
 a media element without clean CORS still plays, but analyses as pure silence.
 (The token query parameter is what actually gates access to the server.)
+
+### Live lyrics
+
+The ♪ button on the track strip swaps the visualizer (or the video) for a lyrics
+pane, where the line being sung lights up word by word — a gradient edge travels
+through each word as it lands.
+
+Timing is read straight off the media element's `currentTime` in a
+`requestAnimationFrame` loop rather than from the player's 4Hz position updates,
+so the sweep is frame-exact. React only re-renders when the active *line*
+changes; the per-word progress is written to the DOM as a CSS custom property,
+which is what keeps a 60fps effect away from the reconciler entirely.
+
+Clicking a line seeks to it. Scrolling by hand parks the auto-scroll for a few
+seconds so you can read ahead without it yanking you back.
+
+#### Where lyrics come from
+
+Cheapest first, stopping at the first hit:
+
+1. **A hand-picked choice**, if this track has one — see *Fixing a bad match*.
+2. **A `.lrc` (or `.txt`) next to the audio file** — same name, different
+   extension. Nothing is fetched when one exists.
+3. **The file's own tags** — ID3 `SYLT` (genuinely timed) and `USLT`, the MP4
+   `©lyr` atom, and the FLAC/Ogg `LYRICS` / `SYNCEDLYRICS` / `UNSYNCEDLYRICS`
+   comments. Taggers habitually paste a whole LRC document into the plain lyrics
+   field, so those go through the LRC parser too rather than being assumed flat.
+4. **[NetEase](https://music.163.com)**, but *only* for what nothing else has:
+   genuine per-word timing. When it has nothing better than line timing we move
+   on, since LRCLIB's text is the better curated of the two for Western music.
+5. **[LRCLIB](https://lrclib.net)** — free, no key, no account. It is asked for
+   an exact match on artist/title/album/length, then the same without the album
+   (the field most likely to be tagged differently), then a search.
+
+Lookups run in the main process. That is why neither host needs a CSP entry, and
+why the requests carry nothing of Discord's — only the track, artist, album and
+length are ever sent. Network results are cached under `vc-localmusic-lyrics` in
+the user data directory, including misses for a week, so a track is looked up
+once and not again. Sidecars and tags are deliberately *not* cached, so editing a
+`.lrc` shows up on the next track change.
+
+A file with no artist tag falls back to reading `Artist - Title` out of its own
+name, and yt-dlp decoration (`[dQw4w9WgXcQ]`, `(Official Video)`, …) is stripped
+before anything is looked up.
+
+#### Matching, and why it would rather show nothing
+
+Every fuzzy result is scored against what is playing — a Dice coefficient over
+character bigrams for the title and artist, plus a five second window on the
+length — and rejected if it does not clear both. A title with no artist behind it
+and fewer than four significant characters is not searched at all.
+
+That last rule has a story. A file named `K. [26Uo_l5lipo]` with no artist tag
+used to search for `K.`, and the single result within eight seconds of its length
+was an **instrumental** "Sicko Mode (feat. K.K. Slider)" — so the panel proudly
+displayed *Instrumental*. Two things fixed it: the scoring above, and only
+trusting an `instrumental` flag when it comes from an exact four-field lookup
+rather than from a search. Wrong lyrics are worse than no lyrics, and there is a
+manual override for whatever falls through.
+
+#### Word-level timing
+
+Real per-word timing is read from three sources: **NetEase `yrc`**, **enhanced
+LRC** (the A2 extension, `<00:12.34>` before each word) and ID3 `SYLT`.
+
+It matters more than it sounds. Word length does not predict how long a word is
+held — in *K.*, `I` lasts 0.39s, `remember` 0.96s and `noticed` **1.65s**, so the
+seven-letter word is sung 70% longer than the eight-letter one. No amount of
+estimating from the text can produce that.
+
+When only line timing is available the words are still swept, by spreading the
+line across them by length — but over how long the line is *actually sung*, not
+over the gap to the next line. Those are very different numbers: a line followed
+by an instrumental break owns the whole break, which stretched the sweep to
+around 1.2–1.4x on measured tracks and left the highlight visibly trailing the
+vocal. The rate is calibrated per song, from the low quartile of each line's
+seconds-per-character (lines butted against the next one have almost no gap, so
+they reveal the true singing rate), then capped by the slot. Checked against
+NetEase's real word timings for the same song, that moves the median line from
+1.19x the true singing time to 0.94x.
+
+Apple Music's TTML is the other large source of syllable timing, and what the
+karaoke-style Android players generally proxy. It is deliberately not wired up:
+those proxies re-export a private endpoint, and the one usually named
+([Paxsenix](https://lyrics.paxsenix.org)) intermittently timed out and returned
+nothing at all from its word-level endpoints when this was written. Kugou's `krc`
+was rejected too — its search host was unreachable.
+
+#### Fixing a bad match
+
+**Fix lyrics…** in the lyrics pane searches both providers by hand. Results show
+artist, album and length, with word-by-word ones flagged; picking one pins it to
+that file and remembers it, so it stays fixed across restarts. A pinned choice
+outranks every provider including the local files — an override the file could
+silently overrule would not be much of an override — and there is a button to
+clear it again.
+
+#### Settings
+
+| setting | does |
+| --- | --- |
+| `showLyrics` | the panel mode itself — the same thing the ♪ button toggles |
+| `lyricsOnline` | whether anything may be looked up online; off keeps everything local |
+| `lyricsWordLevel` | whether to spend a request looking for word-by-word timing |
+| `lyricsOffset` | nudge in milliseconds, positive shows lines earlier |
+
+Listeners in a listen-along session get lyrics too, since playback is local on
+every client — the same lookup runs against the tags the host broadcast. There
+is no file beside which to find a sidecar, so those go straight to LRCLIB.
 
 ### Resizing
 
@@ -267,8 +376,26 @@ Only what Chromium can actually decode: `mp3`, `flac`, `m4a`, `aac`, `ogg`,
 `mkv`, `avi`, `wmv` and `wma` are deliberately excluded — including them would
 put files in the library that silently refuse to play.
 
-Tags are read for ID3v2 (mp3) and FLAC, including embedded cover art. MP4/M4A
-atom parsing is not implemented, so those fall back to the file name.
+Tags — title, artist, album, cover art and any embedded lyrics — are read for all
+of them:
+
+| format | read from |
+| --- | --- |
+| mp3 | ID3v2.2 / v2.3 / v2.4 frames |
+| flac | Vorbis comments + `PICTURE` blocks |
+| m4a, mp4, m4v, mov | `moov > udta > meta > ilst` atoms |
+| ogg, oga, opus | Vorbis / Opus comments, cover via `METADATA_BLOCK_PICTURE` |
+
+Two notes, both of which were causing tracks to show up as bare file names:
+
+- MP4 and Ogg family tags were not parsed at all until recently, so anything that
+  was not an mp3 or a FLAC — which includes yt-dlp's default output — had no
+  metadata whatsoever.
+- The ID3 reader was taking byte 4 of the header as the major version when that
+  is the *revision*. Every tag therefore looked like v2.2, whose frame ids are
+  three bytes rather than four, so `TIT2` was read as `TIT` and the size that
+  followed was garbage. In practice **no v2.3 or v2.4 mp3 ever produced tags**.
+  Both are fixed; a library that used to show file names should now show titles.
 
 ## The one selector that may need adjusting
 

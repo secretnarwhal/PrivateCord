@@ -9,6 +9,7 @@ import "./styles.css";
 import ErrorBoundary from "@components/ErrorBoundary";
 import definePlugin from "@utils/types";
 
+import { loadLyricsOverrides, lyricsStore } from "./LyricsStore";
 import { MiniPlayer } from "./MiniPlayer";
 import { store } from "./PlayerStore";
 import { sessionStore } from "./session/SessionStore";
@@ -50,6 +51,7 @@ export default definePlugin({
     start() {
         applyGoLiveVisibility(settings.store.hideGoLiveTile);
         setMediaKeysListener(() => void store.applyMediaKeyMode());
+        loadLyricsOverrides().catch(e => console.error("[LocalMusic] failed to restore lyrics overrides:", e));
         store.init().catch(e => console.error("[LocalMusic] failed to restore library:", e));
     },
 
@@ -59,6 +61,7 @@ export default definePlugin({
         // end/leave any session first — it says goodbye over channels the
         // player teardown is about to close
         sessionStore.destroy();
+        lyricsStore.destroy();
         store.destroy();
     },
 

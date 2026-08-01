@@ -1251,3 +1251,290 @@
 }
 
 /* #endregion */
+
+/* #region lyrics */
+
+/* Takes the visualizer's place, between the track strip and the transport. The
+   padding clears both, and the mask fades lines in and out at the two edges
+   rather than letting them collide with the frosted bars. */
+.vc-lm-lyrics {
+    --vc-lm-lyric-on: #fff;
+    --vc-lm-lyric-off: rgb(255 255 255 / 28%);
+
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    padding: 52px 16px 56px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: none;
+    mask-image: linear-gradient(transparent, #000 16%, #000 80%, transparent);
+}
+
+.vc-lm-lyrics::-webkit-scrollbar {
+    display: none;
+}
+
+.vc-lm-lyric-line {
+    padding: 5px 0;
+    font-size: 15px;
+    font-weight: 700;
+    line-height: 1.32;
+    letter-spacing: -0.01em;
+    cursor: pointer;
+    transform-origin: left center;
+
+    /* everything but the line being sung sits very slightly out of focus, which
+       is what makes the active one read as the front of the stack */
+    filter: blur(0.7px);
+    transition:
+        transform 0.3s cubic-bezier(0.22, 1, 0.36, 1),
+        filter 0.3s ease;
+}
+
+.vc-lm-lyric-line-active {
+    transform: scale(1.045);
+    filter: none;
+}
+
+/* already sung: still legible, but well behind the live line */
+.vc-lm-lyric-line-past {
+    --vc-lm-lyric-on: rgb(255 255 255 / 40%);
+}
+
+/* The sweep itself. Each word is its own gradient box, filled from the left as
+   --vc-lm-word-p goes 0 -> 1, with a soft edge so the boundary doesn't read as a
+   hard wipe. LyricsView writes that variable per frame; the rules below are what
+   every other line falls back to.
+
+   The edge travels over 100% + one feather rather than 100%, starting a feather
+   before the word — otherwise the fade band still overlaps the word at p=0 and
+   every unsung word keeps a lit first letter. */
+.vc-lm-lyric-word {
+    --vc-lm-word-p: 0;
+    --vc-lm-word-feather: 0.75em;
+
+    white-space: pre-wrap;
+    color: transparent;
+    background-image: linear-gradient(
+        90deg,
+        var(--vc-lm-lyric-on) 0%,
+        var(--vc-lm-lyric-on) calc(var(--vc-lm-word-p) * (100% + var(--vc-lm-word-feather)) - var(--vc-lm-word-feather)),
+        var(--vc-lm-lyric-off) calc(var(--vc-lm-word-p) * (100% + var(--vc-lm-word-feather))),
+        var(--vc-lm-lyric-off) 100%
+    );
+
+    /* the unprefixed form is Chromium 120+; the prefix keeps an older host from
+       rendering every lyric as invisible transparent text */
+    /* stylelint-disable-next-line property-no-vendor-prefix */
+    -webkit-background-clip: text;
+    background-clip: text;
+}
+
+.vc-lm-lyric-line-past .vc-lm-lyric-word {
+    --vc-lm-word-p: 1;
+}
+
+.vc-lm-lyric-line-active .vc-lm-lyric-word {
+    text-shadow: 0 0 22px color-mix(in oklab, var(--vc-lm-accent, #fff) 40%, transparent);
+}
+
+/* nothing to sweep without timings, so it is just a readable block of text */
+.vc-lm-lyrics-plain .vc-lm-lyric-line {
+    color: rgb(255 255 255 / 72%);
+    font-weight: 600;
+    cursor: default;
+    filter: none;
+}
+
+.vc-lm-lyrics-source {
+    margin-block-start: 16px;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: rgb(255 255 255 / 30%);
+}
+
+/* "looking for lyrics", "no lyrics found", "instrumental" */
+.vc-lm-lyrics-note {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    align-items: center;
+    justify-content: center;
+    color: rgb(255 255 255 / 55%);
+    font-size: 13px;
+    font-weight: 600;
+    pointer-events: none;
+}
+
+.vc-lm-lyrics-hint {
+    font-size: 11px;
+    font-weight: 500;
+    color: rgb(255 255 255 / 38%);
+}
+
+/* the note is normally click-through so the panel behind it still plays/pauses;
+   once it carries a button it has to take the pointer back */
+.vc-lm-lyrics-note-actionable {
+    pointer-events: auto;
+}
+
+.vc-lm-lyrics-fix {
+    margin-inline-start: 8px;
+    padding: 3px 8px;
+    border: none;
+    border-radius: 6px;
+    background: rgb(255 255 255 / 10%);
+    color: rgb(255 255 255 / 75%);
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    cursor: pointer;
+}
+
+.vc-lm-lyrics-fix:hover {
+    background: rgb(255 255 255 / 18%);
+    color: #fff;
+}
+
+/* #endregion */
+
+/* #region lyrics picker */
+
+.vc-lm-lyrics-picker {
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 52px 14px 56px;
+    background: rgb(8 8 12 / 82%);
+    backdrop-filter: blur(14px);
+}
+
+.vc-lm-lyrics-picker-row {
+    display: flex;
+    gap: 6px;
+    flex: 0 0 auto;
+}
+
+.vc-lm-lyrics-picker-input {
+    flex: 1 1 auto;
+    min-width: 0;
+    padding: 6px 9px;
+    border: 1px solid rgb(255 255 255 / 14%);
+    border-radius: 7px;
+    background: rgb(255 255 255 / 8%);
+    color: #fff;
+    font-size: 13px;
+}
+
+.vc-lm-lyrics-picker-input:focus {
+    outline: none;
+    border-color: var(--vc-lm-accent, var(--brand-500));
+}
+
+.vc-lm-lyrics-picker-go,
+.vc-lm-lyrics-picker-clear {
+    flex: 0 0 auto;
+    padding: 6px 10px;
+    border: none;
+    border-radius: 7px;
+    background: rgb(255 255 255 / 12%);
+    color: rgb(255 255 255 / 85%);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+/* the destructive one reads as accented rather than neutral */
+.vc-lm-lyrics-picker-clear {
+    background: color-mix(in oklab, var(--vc-lm-accent, #f55) 22%, transparent);
+}
+
+.vc-lm-lyrics-picker-go:hover,
+.vc-lm-lyrics-picker-clear:hover {
+    background: rgb(255 255 255 / 20%);
+    color: #fff;
+}
+
+.vc-lm-lyrics-picker-go:disabled {
+    opacity: 0.5;
+    cursor: default;
+}
+
+.vc-lm-lyrics-picker-list {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    scrollbar-width: thin;
+}
+
+.vc-lm-lyrics-picker-item {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 7px 9px;
+    border: none;
+    border-radius: 7px;
+    background: rgb(255 255 255 / 6%);
+    color: #fff;
+    text-align: start;
+    cursor: pointer;
+}
+
+.vc-lm-lyrics-picker-item:hover {
+    background: color-mix(in oklab, var(--vc-lm-accent, #fff) 22%, rgb(255 255 255 / 8%));
+}
+
+.vc-lm-lyrics-picker-title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.vc-lm-lyrics-picker-tag {
+    padding: 1px 5px;
+    border-radius: 4px;
+    background: color-mix(in oklab, var(--vc-lm-accent, #fff) 30%, transparent);
+    font-size: 9px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.vc-lm-lyrics-picker-meta {
+    font-size: 11px;
+    color: rgb(255 255 255 / 55%);
+}
+
+.vc-lm-lyrics-picker-empty {
+    color: rgb(255 255 255 / 50%);
+    font-size: 12px;
+}
+
+/* fullscreen is the one place there is room to give them properly */
+.vc-lm-video:fullscreen .vc-lm-lyrics {
+    padding: 15vh 12% 18vh;
+    mask-image: linear-gradient(transparent, #000 14%, #000 82%, transparent);
+}
+
+.vc-lm-video:fullscreen .vc-lm-lyric-line {
+    padding: 10px 0;
+    font-size: 30px;
+    line-height: 1.28;
+}
+
+/* #endregion */

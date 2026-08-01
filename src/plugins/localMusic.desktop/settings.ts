@@ -53,6 +53,28 @@ export const settings = definePluginSettings({
         description: "Show the picture for video files. When off, videos get the audio visualizer too. Also toggleable from the player itself",
         default: true
     },
+    showLyrics: {
+        type: OptionType.BOOLEAN,
+        description: "Show live lyrics in the player instead of the visualizer. Also toggleable from the player itself",
+        default: false
+    },
+    lyricsOnline: {
+        type: OptionType.BOOLEAN,
+        description: "Look lyrics up on LRCLIB when the file has none of its own. Only the track, artist, album and length are sent",
+        default: true
+    },
+    lyricsWordLevel: {
+        type: OptionType.BOOLEAN,
+        description: "Look up word-by-word timing (via NetEase) so the highlight follows the singer instead of being estimated. Falls back to LRCLIB when a track has none",
+        default: true
+    },
+    lyricsOffset: {
+        type: OptionType.SLIDER,
+        description: "Nudge the lyrics timing, in milliseconds. Positive shows them earlier",
+        default: 0,
+        markers: [-2000, -1000, -500, 0, 500, 1000, 2000],
+        stickToMarkers: false
+    },
     ytDlpPath: {
         type: OptionType.STRING,
         description: "Path to yt-dlp. Leave empty to use ./yt-dlp in your music folder, then whatever is on your PATH",

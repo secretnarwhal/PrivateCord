@@ -15,6 +15,13 @@ export interface ParsedTags {
     artist?: string;
     album?: string;
     picture?: { mime: string; data: Buffer; };
+    /**
+     * Embedded lyrics as text. Usually plain, but tag editors habitually paste
+     * whole LRC files in here, so the caller parses rather than assumes.
+     */
+    lyrics?: string;
+    /** ID3 SYLT: genuinely timed lyrics, already decoded to ms + text */
+    syncedLyrics?: { time: number; text: string; }[];
 }
 
 async function readBytes(path: string, length: number, position = 0) {
@@ -71,7 +78,11 @@ async function parseId3(path: string): Promise<ParsedTags | null> {
     const header = await readBytes(path, 10);
     if (header.length < 10 || header.toString("latin1", 0, 3) !== "ID3") return null;
 
-    const major = header[4];
+    // byte 3 is the major version, byte 4 the revision. Reading the revision here
+    // makes every tag look like v2.2, so 4 byte frame ids get read as 3 ("TIT2"
+    // as "TIT") and the size that follows is garbage — which silently cost every
+    // v2.3/v2.4 mp3 its tags.
+    const major = header[3];
     const tagSize = readSynchsafe(header, 6);
     if (tagSize <= 0 || tagSize > 32 * 1024 * 1024) return null;
 
@@ -111,6 +122,23 @@ async function parseId3(path: string): Promise<ParsedTags | null> {
             case "TALB": case "TAL":
                 tags.album ||= trimNul(decodeText(frame[0], frame.subarray(1)));
                 break;
+            case "USLT": case "ULT": {
+                if (tags.lyrics) break;
+
+                const encoding = frame[0];
+                // encoding byte, then a 3 byte language code, then a description
+                const { next } = findTerminator(frame, 4, encoding);
+                const text = trimNul(decodeText(encoding, frame.subarray(next)));
+                if (text) tags.lyrics = text;
+                break;
+            }
+            case "SYLT": case "SLT": {
+                if (tags.syncedLyrics) break;
+
+                const parsed = parseSylt(frame);
+                if (parsed?.length) tags.syncedLyrics = parsed;
+                break;
+            }
             case "APIC": case "PIC": {
                 if (tags.picture) break;
 
@@ -139,6 +167,38 @@ async function parseId3(path: string): Promise<ParsedTags | null> {
     }
 
     return tags;
+}
+
+/**
+ * ID3 SYLT: encoding, 3 byte language, timestamp format, content type, then a
+ * NUL-terminated descriptor, then pairs of NUL-terminated text and a 4 byte
+ * timestamp. Only the millisecond timestamp format (2) is decodable — format 1
+ * counts MPEG frames, which needs the frame rate we never parsed.
+ */
+function parseSylt(frame: Buffer): { time: number; text: string; }[] | null {
+    if (frame.length < 7) return null;
+
+    const encoding = frame[0];
+    if (frame[4] !== 2) return null;
+
+    const { next } = findTerminator(frame, 6, encoding);
+    const entries: { time: number; text: string; }[] = [];
+
+    let cursor = next;
+    while (cursor + 4 <= frame.length) {
+        const { end, next: afterText } = findTerminator(frame, cursor, encoding);
+        if (afterText + 4 > frame.length) break;
+
+        const text = decodeText(encoding, frame.subarray(cursor, end));
+        const time = frame.readUInt32BE(afterText);
+        cursor = afterText + 4;
+
+        // SYLT carries the newlines that separate lines inside the text itself
+        const clean = text.replace(/^[\r\n]+/, "").trim();
+        if (clean) entries.push({ time, text: clean });
+    }
+
+    return entries;
 }
 
 async function parseFlac(path: string): Promise<ParsedTags | null> {
@@ -202,6 +262,17 @@ function parseVorbisComment(block: Buffer, tags: ParsedTags) {
         if (key === "TITLE") tags.title ||= value;
         else if (key === "ARTIST") tags.artist ||= value;
         else if (key === "ALBUM") tags.album ||= value;
+        // no standard key for these; every tagger picked its own
+        else if (key === "LYRICS" || key === "SYNCEDLYRICS" || key === "UNSYNCEDLYRICS") tags.lyrics ||= value;
+        // how Ogg and Opus carry cover art: a FLAC picture block in base64, which
+        // is the same structure the FLAC reader already decodes
+        else if (key === "METADATA_BLOCK_PICTURE" && !tags.picture) {
+            try {
+                parseFlacPicture(Buffer.from(value, "base64"), tags);
+            } catch {
+                // a truncated or bogus block just means no cover
+            }
+        }
     }
 }
 
@@ -229,15 +300,235 @@ function parseFlacPicture(block: Buffer, tags: ParsedTags) {
     tags.picture = { mime: mime || "image/jpeg", data: Buffer.from(block.subarray(cursor, cursor + dataLength)) };
 }
 
+// #region MP4 / M4A
+
+/** A `moov` bigger than this is not carrying tags we want badly enough. */
+const MAX_MOOV = 64 * 1024 * 1024;
+
+interface Atom {
+    type: string;
+    /** first byte of the payload, past the header */
+    start: number;
+    /** one past the last byte of the atom */
+    end: number;
+}
+
+/**
+ * Walks the atoms sitting directly inside `[start, end)`. MP4 is a tree of
+ * length-prefixed boxes: 4 byte big endian size, 4 byte type, payload — with
+ * size 1 meaning a 64 bit size follows, and 0 meaning "to the end".
+ */
+function* atoms(buf: Buffer, start: number, end: number): Generator<Atom> {
+    let cursor = start;
+
+    while (cursor + 8 <= end) {
+        let size = buf.readUInt32BE(cursor);
+        const type = buf.toString("latin1", cursor + 4, cursor + 8);
+        let header = 8;
+
+        if (size === 1) {
+            if (cursor + 16 > end) return;
+            // the high word is always 0 for anything that fits in a Buffer
+            if (buf.readUInt32BE(cursor + 8) !== 0) return;
+            size = buf.readUInt32BE(cursor + 12);
+            header = 16;
+        } else if (size === 0) {
+            size = end - cursor;
+        }
+
+        if (size < header || cursor + size > end) return;
+
+        yield { type, start: cursor + header, end: cursor + size };
+        cursor += size;
+    }
+}
+
+function findAtom(buf: Buffer, start: number, end: number, type: string): Atom | null {
+    for (const atom of atoms(buf, start, end)) {
+        if (atom.type === type) return atom;
+    }
+    return null;
+}
+
+/** Finds `moov` among the top level atoms and reads it in. It can sit at either end. */
+async function readMoov(path: string): Promise<Buffer | null> {
+    let position = 0;
+
+    for (let i = 0; i < 64; i++) {
+        const header = await readBytes(path, 16, position);
+        if (header.length < 8) return null;
+
+        let size = header.readUInt32BE(0);
+        const type = header.toString("latin1", 4, 8);
+        let headerLen = 8;
+
+        if (size === 1) {
+            if (header.length < 16 || header.readUInt32BE(8) !== 0) return null;
+            size = header.readUInt32BE(12);
+            headerLen = 16;
+        }
+
+        if (size < headerLen) return null;
+
+        if (type === "moov") {
+            const length = size - headerLen;
+            if (length <= 0 || length > MAX_MOOV) return null;
+            return readBytes(path, length, position + headerLen);
+        }
+
+        position += size;
+    }
+
+    return null;
+}
+
+// iTunes-style keys. The © is a literal 0xA9 byte, which latin1 decodes to U+00A9.
+const MP4_TITLE = "\u00A9nam";
+const MP4_ARTIST = "\u00A9ART";
+const MP4_ALBUM_ARTIST = "aART";
+const MP4_ALBUM = "\u00A9alb";
+const MP4_LYRICS = "\u00A9lyr";
+
+/**
+ * MP4 / M4A / M4V / MOV all share the same box layout, so one parser covers the
+ * lot: `moov > udta > meta > ilst`, with each item holding a `data` box.
+ */
+async function parseMp4(path: string): Promise<ParsedTags | null> {
+    const header = await readBytes(path, 12);
+    // every file in the family opens with an ftyp box
+    if (header.length < 12 || header.toString("latin1", 4, 8) !== "ftyp") return null;
+
+    const moov = await readMoov(path);
+    // it is an MP4, just not one we can read tags out of — claim it either way so
+    // the caller doesn't go on to misparse it as something else
+    if (!moov) return {};
+
+    const tags: ParsedTags = {};
+
+    const udta = findAtom(moov, 0, moov.length, "udta");
+    // `meta` usually hangs off udta, but some writers put it straight under moov
+    const meta = udta
+        ? findAtom(moov, udta.start, udta.end, "meta") ?? findAtom(moov, 0, moov.length, "meta")
+        : findAtom(moov, 0, moov.length, "meta");
+    if (!meta) return tags;
+
+    // meta is a full box: 4 bytes of version and flags come before its children
+    const ilst = findAtom(moov, meta.start + 4, meta.end, "ilst");
+    if (!ilst) return tags;
+
+    for (const item of atoms(moov, ilst.start, ilst.end)) {
+        const data = findAtom(moov, item.start, item.end, "data");
+        if (!data || data.end - data.start < 8) continue;
+
+        // payload: 1 reserved byte + 3 byte well-known type, 4 byte locale, value
+        const kind = moov.readUInt32BE(data.start) & 0xFFFFFF;
+        const value = moov.subarray(data.start + 8, data.end);
+        if (!value.length) continue;
+
+        const text = () => value.toString("utf8").replace(/\0+$/, "").trim();
+
+        switch (item.type) {
+            case MP4_TITLE: tags.title ||= text(); break;
+            case MP4_ARTIST: tags.artist ||= text(); break;
+            // only a fallback: the track artist is the better answer when both exist
+            case MP4_ALBUM_ARTIST: tags.artist ||= text(); break;
+            case MP4_ALBUM: tags.album ||= text(); break;
+            case MP4_LYRICS: tags.lyrics ||= text(); break;
+            case "covr":
+                if (!tags.picture) {
+                    tags.picture = {
+                        mime: kind === 14 ? "image/png" : "image/jpeg",
+                        data: Buffer.from(value)
+                    };
+                }
+                break;
+        }
+    }
+
+    return tags;
+}
+
+// #endregion
+
+// #region Ogg / Opus
+
+/** Enough for the comment header, including a modest embedded cover. */
+const OGG_SCAN_BYTES = 1024 * 1024;
+
+/**
+ * Concatenates the payloads of the leading Ogg pages. The comment header is the
+ * second packet and can straddle a page boundary, so the pages are stitched back
+ * together before anything is looked for inside them.
+ */
+function joinOggPages(buf: Buffer): Buffer {
+    const parts: Buffer[] = [];
+    let cursor = 0;
+
+    while (cursor + 27 <= buf.length) {
+        if (buf.toString("latin1", cursor, cursor + 4) !== "OggS") break;
+
+        const segments = buf[cursor + 26];
+        const tableEnd = cursor + 27 + segments;
+        if (tableEnd > buf.length) break;
+
+        let payload = 0;
+        for (let i = 0; i < segments; i++) payload += buf[cursor + 27 + i];
+
+        const payloadEnd = tableEnd + payload;
+        if (payloadEnd > buf.length) {
+            parts.push(buf.subarray(tableEnd));
+            break;
+        }
+
+        parts.push(buf.subarray(tableEnd, payloadEnd));
+        cursor = payloadEnd;
+    }
+
+    return parts.length ? Buffer.concat(parts) : Buffer.alloc(0);
+}
+
+/**
+ * Vorbis and Opus in an Ogg container. Both carry the same comment structure the
+ * FLAC reader already understands, behind a different marker.
+ */
+async function parseOgg(path: string): Promise<ParsedTags | null> {
+    const head = await readBytes(path, 4);
+    if (head.toString("latin1") !== "OggS") return null;
+
+    const tags: ParsedTags = {};
+    const packets = joinOggPages(await readBytes(path, OGG_SCAN_BYTES));
+    if (!packets.length) return tags;
+
+    // \x03vorbis introduces the Vorbis comment header; Opus uses OpusTags
+    let start = packets.indexOf(Buffer.from("\x03vorbis", "latin1"));
+    if (start !== -1) start += 7;
+    else {
+        start = packets.indexOf(Buffer.from("OpusTags", "latin1"));
+        if (start !== -1) start += 8;
+    }
+
+    if (start === -1 || start >= packets.length) return tags;
+
+    parseVorbisComment(packets.subarray(start), tags);
+    return tags;
+}
+
+// #endregion
+
 /**
  * Reads tags for a single file. Returns an empty object rather than throwing so
  * a single malformed file can never take out a whole library scan.
  *
- * MP4/M4A atoms are not parsed, those fall back to the file name.
+ * Each parser identifies its own format by magic and returns null when the file
+ * is not its business, so the chain falls through to the next one.
  */
 export async function readTags(path: string): Promise<ParsedTags> {
     try {
-        return (await parseId3(path)) ?? (await parseFlac(path)) ?? {};
+        return (await parseId3(path))
+            ?? (await parseFlac(path))
+            ?? (await parseMp4(path))
+            ?? (await parseOgg(path))
+            ?? {};
     } catch {
         return {};
     }
