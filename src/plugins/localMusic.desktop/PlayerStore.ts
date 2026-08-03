@@ -11,13 +11,15 @@ import { useEffect, useReducer } from "@webpack/common";
 import type { PlayerSessionAdapter } from "./session/SessionStore";
 import { settings, ytDlpOptions } from "./settings";
 import type {
-    DownloadJob, QueueItem, SearchResult, SearchSource, ServerInfo, Track, TrackMetadata, YtDlpInfo
+    CustomTool, DownloadJob, FileOpResult, OrganiseItem, QueueItem, SearchResult, SearchSource,
+    ServerInfo, ToolOutput, ToolRun, Track, TrackMetadata, YtDlpInfo
 } from "./types";
 
 const Native = VencordNative.pluginHelpers.LocalMusic as PluginNative<typeof import("./native")>;
 
 const FOLDER_KEY = "LocalMusic_folder";
 const PREFS_KEY = "LocalMusic_prefs";
+const TOOLS_KEY = "LocalMusic_tools";
 
 export type RepeatMode = "off" | "all" | "one";
 
@@ -63,8 +65,70 @@ const DEFAULT_PREFS: Prefs = {
     queue: []
 };
 
+/**
+ * Whether a path sits inside a folder. The renderer has no `path` module, and
+ * the separator depends on the platform the library lives on, so both are
+ * accepted — a Windows path never contains a bare "/" segment boundary anyway.
+ */
+function isSeparator(char: string) {
+    return char === "\\" || char === "/";
+}
+
+export function isUnder(path: string, dir: string) {
+    if (path.length <= dir.length || !path.startsWith(dir)) return false;
+
+    // a folder that already ends in one (a drive root, "D:\") needs no second
+    return isSeparator(dir[dir.length - 1]) || isSeparator(path[dir.length]);
+}
+
+/** The folder a path sits in, or "" for something with no separator in it at all. */
+function folderOf(path: string) {
+    for (let i = path.length - 1; i >= 0; i--) {
+        if (isSeparator(path[i])) return path.slice(0, i);
+    }
+    return "";
+}
+
+function byPath(a: string, b: string) {
+    return a.localeCompare(b, undefined, { numeric: true });
+}
+
+/** Sorts after every numbered track, without ever subtracting to NaN. */
+const UNNUMBERED = Number.MAX_SAFE_INTEGER;
+
+/**
+ * Album order: inside one folder, the disc and track numbers the tags carry;
+ * across folders, plain path order, because two folders are two albums and
+ * "track 1" means a different thing in each.
+ *
+ * Files the tags don't place sort after the ones they do, so a folder where
+ * nothing is numbered comes out in name order exactly as it did before.
+ */
+export function compareAlbumOrder(metadata: Record<string, TrackMetadata>, a: string, b: string) {
+    if (folderOf(a) !== folderOf(b)) return byPath(a, b);
+
+    const first = metadata[a];
+    const second = metadata[b];
+
+    const discs = (first?.disc ?? 1) - (second?.disc ?? 1);
+    if (discs) return discs;
+
+    const tracks = (first?.track ?? UNNUMBERED) - (second?.track ?? UNNUMBERED);
+    if (tracks) return tracks;
+
+    return byPath(a, b);
+}
+
 const stateListeners = new Set<() => void>();
 const positionListeners = new Set<() => void>();
+/** consoles currently on screen; see the "toolOutput" listener in connectEvents */
+const toolOutputListeners = new Set<(output: ToolOutput) => void>();
+
+/** Subscribes to live console output for every run. Returns the unsubscribe. */
+export function onToolOutput(listener: (output: ToolOutput) => void) {
+    toolOutputListeners.add(listener);
+    return () => toolOutputListeners.delete(listener);
+}
 
 /**
  * A single <video> element backs everything, including audio-only files. Keeping
@@ -232,6 +296,12 @@ class PlayerStore {
     queue: QueueItem[] = [];
 
     downloads: DownloadJob[] = [];
+
+    /** the downloaders the user wired up themselves */
+    tools: CustomTool[] = [];
+    /** every run main is still holding, running or not */
+    toolRuns: ToolRun[] = [];
+
     /** accelerators globalShortcut actually took; empty when that mode is off or refused */
     grabbedMediaKeys: string[] = [];
 
@@ -249,6 +319,7 @@ class PlayerStore {
     private events: EventSource | null = null;
     private history: number[] = [];
     private finishedDownloads = new Set<string>();
+    private finishedToolRuns = new Set<string>();
     private lastPositionSync = 0;
     /** path -> index in tracks, so resolving a queue entry isn't a scan of the library */
     private indexByPath = new Map<string, number>();
@@ -294,10 +365,13 @@ class PlayerStore {
     }
 
     async init() {
-        const [folder, prefs] = await Promise.all([
+        const [folder, prefs, tools] = await Promise.all([
             DataStore.get<string>(FOLDER_KEY),
-            DataStore.get<Prefs>(PREFS_KEY)
+            DataStore.get<Prefs>(PREFS_KEY),
+            DataStore.get<CustomTool[]>(TOOLS_KEY)
         ]);
+
+        this.tools = tools ?? [];
 
         const {
             volume, shuffle, repeat, lastPath, videoHeight, videoWidth, floating, floatAnchor, queue
@@ -329,6 +403,7 @@ class PlayerStore {
         await this.applyMediaKeyMode();
         // downloads outlive the renderer, so adopt whatever main is still working on
         await this.refreshDownloads();
+        await this.refreshToolRuns();
 
         notify();
     }
@@ -364,8 +439,19 @@ class PlayerStore {
     }
 
     artUrl(track: Track) {
-        if (!this.server || !this.metadata[track.path]?.hasArt) return null;
-        return `http://127.0.0.1:${this.server.port}/art?t=${this.server.token}&p=${encodeURIComponent(track.path)}`;
+        return this.metadata[track.path]?.hasArt ? this.trackArtUrl(track.path) : null;
+    }
+
+    /** Cover art embedded in a file's tags, addressed by path rather than by track. */
+    trackArtUrl(path: string) {
+        if (!this.server) return null;
+        return `http://127.0.0.1:${this.server.port}/art?t=${this.server.token}&p=${encodeURIComponent(path)}`;
+    }
+
+    /** A cover image kept as a file beside the music — folder.jpg and friends. */
+    imageUrl(path: string) {
+        if (!this.server) return null;
+        return `http://127.0.0.1:${this.server.port}/image?t=${this.server.token}&p=${encodeURIComponent(path)}`;
     }
 
     // #region OS integration
@@ -470,6 +556,24 @@ class PlayerStore {
             notify();
         });
 
+        source.addEventListener("toolRuns", e => {
+            this.toolRuns = JSON.parse((e as MessageEvent).data);
+
+            // a tool that finished has very likely written a file into the library
+            const finished = this.toolRuns.filter(r => r.status === "done" && !this.finishedToolRuns.has(r.id));
+            finished.forEach(r => this.finishedToolRuns.add(r.id));
+            if (finished.length) this.rescan();
+
+            notify();
+        });
+
+        // console output is high-volume and only ever wanted by an open console, so
+        // it goes straight to whoever is watching instead of through store state
+        source.addEventListener("toolOutput", e => {
+            const output: ToolOutput = JSON.parse((e as MessageEvent).data);
+            toolOutputListeners.forEach(listener => listener(output));
+        });
+
         this.events = source;
     }
 
@@ -523,6 +627,36 @@ class PlayerStore {
             this.syncMediaSession();
             notify();
         }
+
+        // once, at the end: the scan can only order files by name, and reordering
+        // the library under the user every fifty files would be worse than a wait
+        this.sortByAlbum();
+    }
+
+    /**
+     * Puts each folder into album order now that its tags are known. Track
+     * numbers live inside the files, so the scan can't have sorted by them —
+     * until this runs, an album plays in whatever order its file names fell in.
+     *
+     * Indexes move, so everything holding one is carried across by path.
+     */
+    private sortByAlbum() {
+        const current = this.currentTrack?.path ?? null;
+        const history = this.history.map(index => this.tracks[index]?.path);
+
+        const sorted = [...this.tracks].sort((a, b) => compareAlbumOrder(this.metadata, a.path, b.path));
+        if (sorted.every((track, index) => track === this.tracks[index])) return;
+
+        this.tracks = sorted;
+        this.indexByPath = new Map(this.tracks.map((track, index) => [track.path, index]));
+        this.currentIndex = current ? this.indexByPath.get(current) ?? -1 : -1;
+        this.history = history
+            .map(path => (path === undefined ? -1 : this.indexByPath.get(path) ?? -1))
+            .filter(index => index !== -1);
+
+        notify();
+        // the mirror a listener sees is this list, so it has just gone stale
+        this.session?.onLocalChange("library");
     }
 
     /** Installed and removed by the SessionStore; solo behavior needs it null. */
@@ -754,6 +888,135 @@ class PlayerStore {
         this.savePrefs();
         notify();
         this.session?.onLocalChange("queue");
+    }
+
+    /** Queues several paths at once — one save and one broadcast for the lot. */
+    queuePaths(paths: string[], next = false) {
+        const items = paths.filter(path => this.indexByPath.has(path)).map(path => this.mintQueueItem(path));
+        if (!items.length) return 0;
+
+        this.queue = next ? [...items, ...this.queue] : [...this.queue, ...items];
+        this.saveQueue();
+        return items.length;
+    }
+
+    // #endregion
+
+    // #region files on disk
+
+    /** Where a path sits in the library, or undefined when the library has no such file. */
+    indexOfPath(path: string) {
+        return this.indexByPath.get(path);
+    }
+
+    /** Every playable file the library holds inside a folder, in library order. */
+    tracksUnder(dir: string) {
+        return this.tracks.filter(track => isUnder(track.path, dir)).map(track => track.path);
+    }
+
+    async playPath(path: string) {
+        const index = this.indexByPath.get(path);
+        if (index !== undefined) await this.load(index);
+    }
+
+    /** Plays the first of these and lines the rest up in front of the queue. */
+    async playPaths(paths: string[]) {
+        const [first, ...rest] = paths.filter(path => this.indexByPath.has(path));
+        if (first === undefined) return;
+
+        if (rest.length) this.queuePaths(rest, true);
+        await this.playPath(first);
+    }
+
+    listFolder(path: string) {
+        return Native.listFolder(path);
+    }
+
+    async createFolder(parent: string, name: string) {
+        const path = await Native.createFolder(parent, name);
+        await this.rescan();
+        return path;
+    }
+
+    async renameEntry(path: string, name: string) {
+        return this.applyFileOp(await Native.renameEntry(path, name));
+    }
+
+    async moveEntries(paths: string[], destination: string) {
+        return this.applyFileOp(await Native.moveEntries(paths, destination));
+    }
+
+    async trashEntries(paths: string[]) {
+        return this.applyFileOp(await Native.trashEntries(paths));
+    }
+
+    /**
+     * Files tracks into `<root>/<artist>/<album>/`. The tags come from here —
+     * they have already been read once — and the native side decides what they
+     * are allowed to become as folder names.
+     */
+    async organiseTracks(paths: string[]) {
+        if (!this.folder) throw new Error("Choose your music folder first");
+
+        const items: OrganiseItem[] = paths.map(path => ({
+            path,
+            artist: this.metadata[path]?.artist ?? "",
+            album: this.metadata[path]?.album ?? ""
+        }));
+
+        return this.applyFileOp(await Native.organiseTracks(this.folder, items));
+    }
+
+    revealEntry(path: string) {
+        return Native.revealEntry(path);
+    }
+
+    /**
+     * Rescans after the disk changed under us, carrying everything we knew about
+     * the files that moved over to their new paths: their tags, the queue entries
+     * pointing at them, and the player's own selection. Without this a rename
+     * would read as a delete followed by the arrival of a stranger.
+     */
+    private async applyFileOp(result: FileOpResult): Promise<FileOpResult> {
+        if (!result.moved.length && !result.removed.length) return result;
+
+        // a moved folder takes its whole subtree with it, so paths are remapped by
+        // prefix as well as outright
+        const remap = (path: string) => {
+            for (const { from, to } of result.moved) {
+                if (path === from) return to;
+                if (isUnder(path, from)) return to + path.slice(from.length);
+            }
+            return path;
+        };
+
+        for (const path of Object.keys(this.metadata)) {
+            const moved = remap(path);
+            if (moved === path) continue;
+
+            this.metadata[moved] = this.metadata[path];
+            delete this.metadata[path];
+        }
+
+        this.queue = this.queue.map(item => ({ ...item, path: remap(item.path) }));
+
+        const current = this.currentTrack?.path;
+        const movedCurrent = current ? remap(current) : null;
+
+        await this.rescan();
+
+        // the rescan looked the current track up by the path it no longer has; it
+        // is still playing, so point at where it actually went
+        if (movedCurrent && movedCurrent !== current) {
+            const index = this.indexByPath.get(movedCurrent);
+            if (index !== undefined) {
+                this.currentIndex = index;
+                this.savePrefs();
+                notify();
+            }
+        }
+
+        return result;
     }
 
     // #endregion
@@ -1005,6 +1268,92 @@ class PlayerStore {
 
     // #endregion
 
+    // #region custom tools
+
+    /** Adds a tool, or replaces the one that already has this id. */
+    async saveTool(tool: CustomTool) {
+        const existing = this.tools.findIndex(t => t.id === tool.id);
+
+        this.tools = existing < 0
+            ? [...this.tools, tool]
+            : this.tools.map(t => t.id === tool.id ? tool : t);
+
+        notify();
+        await DataStore.set(TOOLS_KEY, this.tools);
+    }
+
+    async deleteTool(id: string) {
+        this.tools = this.tools.filter(t => t.id !== id);
+        notify();
+        await DataStore.set(TOOLS_KEY, this.tools);
+    }
+
+    /**
+     * Starts a tool. The run belongs to the main process from here on — this
+     * only seeds the row so it appears before the first event arrives.
+     */
+    async runTool(toolId: string, context: { url?: string; query?: string; }) {
+        const tool = this.tools.find(t => t.id === toolId);
+        if (!tool) throw new Error("That tool no longer exists");
+
+        const run = await Native.startTool(tool, { ...context, folder: this.folder ?? "" });
+        this.toolRuns = [...this.toolRuns.filter(r => r.id !== run.id), run];
+        notify();
+
+        return run;
+    }
+
+    /** Same reconcile as refreshDownloads, for the same dropped-stream reason. */
+    async refreshToolRuns() {
+        try {
+            this.toolRuns = await Native.getToolRuns();
+            notify();
+        } catch { }
+    }
+
+    toolOutput(id: string, from = 0) {
+        return Native.getToolOutput(id, from);
+    }
+
+    sendToolInput(id: string, text: string) {
+        return Native.writeToolInput(id, text);
+    }
+
+    async cancelToolRun(id: string) {
+        // locally first, so a row whose process is already gone in main can still
+        // stop claiming to run — same reasoning as cancelDownload
+        this.toolRuns = this.toolRuns.map((run): ToolRun =>
+            run.id === id && run.status === "running"
+                ? { ...run, status: "cancelled", message: "Cancelled" }
+                : run);
+        notify();
+
+        await Native.cancelTool(id);
+        await this.refreshToolRuns();
+    }
+
+    async removeToolRun(id: string) {
+        this.toolRuns = this.toolRuns.filter(run => run.id !== id);
+        notify();
+
+        await Native.removeToolRun(id);
+    }
+
+    async clearFinishedToolRuns() {
+        await Native.clearFinishedToolRuns();
+        await this.refreshToolRuns();
+    }
+
+    pickToolFolder() {
+        return Native.pickToolFolder();
+    }
+
+    pickToolCommand() {
+        return Native.pickToolCommand();
+    }
+
+    // #endregion
+
     dismissError() {
         this.error = null;
         notify();
@@ -1017,6 +1366,9 @@ class PlayerStore {
         // hand the media keys back to whatever else wants them
         Native.setGlobalMediaKeys(false).catch(() => { });
         Native.closeBrowser().catch(() => { });
+        // custom tools outlive a closed modal, but not the plugin being turned off —
+        // there'd be nothing left to show their output in
+        Native.stopTools().catch(() => { });
 
         media?.pause();
         media?.removeAttribute("src");

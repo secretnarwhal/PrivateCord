@@ -15,6 +15,7 @@ import { Modal, React, TextInput, useEffect, useState } from "@webpack/common";
 import { cl, useArtAccent } from "./MiniPlayer";
 import { store, usePlayer } from "./PlayerStore";
 import { settings } from "./settings";
+import { ToolRunner } from "./ToolRunner";
 import type { DownloadJob, SearchResult, SearchSource, YtDlpInfo } from "./types";
 
 const SEARCH_LIMIT = 25;
@@ -336,6 +337,9 @@ export function Downloader({ modalProps }: { modalProps: RenderModalProps; }) {
                         </Span>
                     )}
                 </div>
+
+                {/* everything above is yt-dlp; below is whatever the user brought */}
+                <ToolRunner query={query} />
             </div>
         </Modal>
     );

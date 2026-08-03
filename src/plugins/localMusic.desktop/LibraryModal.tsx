@@ -13,6 +13,7 @@ import type { RenderModalProps } from "@vencord/discord-types";
 import { Modal, openModal, React, TextInput, useMemo, useState } from "@webpack/common";
 
 import { Downloader } from "./Downloader";
+import { FolderBrowser } from "./FolderBrowser";
 import { cl, ControlButton, Icon, PATHS, useArtAccent } from "./MiniPlayer";
 import { store, usePlayer, usePlayerPosition } from "./PlayerStore";
 import { useSession } from "./session/SessionStore";
@@ -362,7 +363,13 @@ export function LibraryModal({ modalProps, initialTab = "library" }: {
                                 variant="secondary"
                                 onClick={() => openModal(props => <Downloader modalProps={props} />)}
                             >
-                                Download…
+                                {/* downloads and custom tools keep going with this closed, so the
+                                    count is the only sign anything is still happening */}
+                                {(() => {
+                                    const busy = player.downloads.filter(j => j.status === "running").length
+                                        + player.toolRuns.filter(r => r.status === "running").length;
+                                    return busy ? `Download… (${busy})` : "Download…";
+                                })()}
                             </Button>
                         </div>
 
@@ -372,31 +379,38 @@ export function LibraryModal({ modalProps, initialTab = "library" }: {
                             placeholder="Search your library…"
                         />
 
-                        <div className={cl("list")}>
-                            {!player.tracks.length && (
-                                <Span size="sm">
-                                    {player.isScanning
-                                        ? "Scanning…"
-                                        : player.folder
-                                            ? "No playable files found in this folder."
-                                            : "Choose a folder to get started."}
-                                </Span>
-                            )}
+                        {/* searching is a flat view of the whole library on purpose —
+                            a search that only looked in the folder you happen to be
+                            standing in would be the least useful kind */}
+                        {query.trim() ? (
+                            <>
+                                <div className={cl("list")}>
+                                    {visible.length ? visible.map(({ track, index }) => (
+                                        <TrackRow
+                                            key={track.path}
+                                            track={track}
+                                            index={index}
+                                            isCurrent={index === player.currentIndex}
+                                        />
+                                    )) : (
+                                        <Span size="sm">
+                                            {player.isScanning ? "Scanning…" : "Nothing in your library matches that."}
+                                        </Span>
+                                    )}
+                                </div>
 
-                            {visible.map(({ track, index }) => (
-                                <TrackRow
-                                    key={track.path}
-                                    track={track}
-                                    index={index}
-                                    isCurrent={index === player.currentIndex}
-                                />
-                            ))}
-                        </div>
-
-                        {filtered.length > MAX_ROWS && (
-                            <Span size="sm">
-                                Showing {MAX_ROWS} of {filtered.length} tracks — search to narrow it down.
-                            </Span>
+                                {filtered.length > MAX_ROWS && (
+                                    <Span size="sm">
+                                        Showing {MAX_ROWS} of {filtered.length} tracks — narrow the search down.
+                                    </Span>
+                                )}
+                            </>
+                        ) : player.folder ? (
+                            <FolderBrowser />
+                        ) : (
+                            <div className={cl("list")}>
+                                <Span size="sm">Choose a folder to get started.</Span>
+                            </div>
                         )}
                     </>
                 )}

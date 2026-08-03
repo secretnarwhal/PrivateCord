@@ -631,6 +631,9 @@
 .vc-lm-modal {
     /* overridden inline with the sampled cover-art colour while a track plays */
     --vc-lm-accent: var(--brand-500, #5865f2);
+
+    /* the tool console overlays this box, and anchors to it rather than the viewport */
+    position: relative;
 }
 
 /* Discord's TextInput, re-skinned into a glass field with an accent focus ring */
@@ -1535,6 +1538,521 @@
     padding: 10px 0;
     font-size: 30px;
     line-height: 1.28;
+}
+
+/* #endregion */
+
+/* #region custom tools */
+
+.vc-lm-tool-section {
+    display: flex;
+    flex-direction: column;
+    margin-block-start: 12px;
+    padding-block-start: 12px;
+    border-block-start: 1px solid rgb(255 255 255 / 8%);
+}
+
+.vc-lm-tool-hint {
+    display: block;
+    color: var(--text-muted);
+    line-height: 1.45;
+}
+
+.vc-lm-tool-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-block: 4px 8px;
+}
+
+.vc-lm-tool-chip {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+}
+
+.vc-lm-tool-edit {
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border: none;
+    border-radius: 6px;
+    background: none;
+    color: var(--text-muted);
+    font-size: 12px;
+    line-height: 1;
+    cursor: pointer;
+    transition: background-color 0.12s ease, color 0.12s ease;
+}
+
+.vc-lm-tool-edit:hover {
+    background: rgb(255 255 255 / 10%);
+    color: #fff;
+}
+
+/* editor */
+
+.vc-lm-tool-editor {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 12px;
+    border-radius: 10px;
+    background: rgb(255 255 255 / 4%);
+    box-shadow: inset 0 0 0 1px rgb(255 255 255 / 6%);
+}
+
+.vc-lm-tool-field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.vc-lm-tool-field > span {
+    color: var(--text-muted);
+}
+
+.vc-lm-tool-field-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.vc-lm-tool-field-row > :first-child {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.vc-lm-tool-editor-actions {
+    display: flex;
+    gap: 8px;
+    margin-block-start: 2px;
+}
+
+/* console */
+
+.vc-lm-tool-console-backdrop {
+    position: absolute;
+    inset: 0;
+    z-index: 5;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    border-radius: inherit;
+    background: rgb(0 0 0 / 55%);
+    backdrop-filter: blur(3px);
+    animation: vc-lm-tool-fade 0.12s ease;
+}
+
+@keyframes vc-lm-tool-fade {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+.vc-lm-tool-console {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    width: 100%;
+    max-height: 100%;
+    padding: 12px;
+    border-radius: 12px;
+    background: var(--background-secondary, #2b2d31);
+    box-shadow: 0 8px 32px rgb(0 0 0 / 45%), inset 0 0 0 1px rgb(255 255 255 / 8%);
+}
+
+.vc-lm-tool-console-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.vc-lm-tool-console-title {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    flex: 1 1 auto;
+}
+
+.vc-lm-tool-scrollback {
+    flex: 1 1 auto;
+    min-height: 120px;
+    max-height: 320px;
+    overflow-y: auto;
+    overflow-wrap: anywhere;
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: rgb(0 0 0 / 35%);
+    box-shadow: inset 0 0 0 1px rgb(255 255 255 / 6%);
+    font-family: var(--font-code, monospace);
+    font-size: 11px;
+    line-height: 1.5;
+    scrollbar-width: thin;
+    scrollbar-color: rgb(255 255 255 / 15%) transparent;
+    user-select: text;
+}
+
+.vc-lm-tool-line {
+    white-space: pre-wrap;
+    color: #d7dade;
+}
+
+/* what the plugin itself printed: the command line, the exit code, sent input */
+.vc-lm-tool-line-meta {
+    color: color-mix(in oklab, var(--vc-lm-accent, var(--brand-500)) 55%, #fff);
+}
+
+.vc-lm-tool-line-err {
+    color: var(--text-danger, #f38688);
+}
+
+.vc-lm-tool-console-input {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.vc-lm-tool-console-input > :first-child {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+/* #endregion */
+
+/* #region folder browser */
+
+/* The library tab is a file manager: folders are tiles, songs are rows, and
+   everything on screen is something that really exists on disk. */
+.vc-lm-browser {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    transition: opacity 0.12s ease;
+}
+
+/* while a move or a delete is in flight — the folder is about to be re-read */
+.vc-lm-browser-busy {
+    opacity: 0.6;
+    pointer-events: none;
+}
+
+.vc-lm-crumbs {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-block-start: 10px;
+    padding: 4px;
+    border-radius: 10px;
+    background: rgb(255 255 255 / 4%);
+    box-shadow: inset 0 0 0 1px rgb(255 255 255 / 6%);
+}
+
+.vc-lm-crumb-trail {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+}
+
+.vc-lm-crumb-trail::-webkit-scrollbar {
+    display: none;
+}
+
+.vc-lm-crumb,
+.vc-lm-crumb-up {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    flex: 0 0 auto;
+    max-width: 220px;
+    padding: 4px 8px;
+    border: none;
+    border-radius: 7px;
+    background: none;
+    color: var(--text-muted);
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    cursor: pointer;
+    transition: color 0.12s ease, background-color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.vc-lm-crumb:hover,
+.vc-lm-crumb-up:hover {
+    color: var(--text-default);
+    background: rgb(255 255 255 / 6%);
+}
+
+.vc-lm-crumb-current {
+    color: #fff;
+}
+
+/* the folder a drag is hovering over — breadcrumb and "up" alike take drops */
+.vc-lm-crumb-drop,
+.vc-lm-crumb-drop:hover {
+    color: #fff;
+    background: color-mix(in oklab, var(--vc-lm-accent) 25%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--vc-lm-accent) 55%, transparent);
+}
+
+.vc-lm-crumb-sep {
+    flex: 0 0 auto;
+    color: rgb(255 255 255 / 22%);
+    font-size: 12px;
+}
+
+.vc-lm-crumb-actions {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    flex: 0 0 auto;
+    margin-inline-start: auto;
+}
+
+/* dismissible, because the folder underneath has already been re-read by now */
+.vc-lm-browser-error {
+    margin-block-start: 8px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: color-mix(in oklab, var(--text-danger, #f38688) 14%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--text-danger, #f38688) 30%, transparent);
+    color: #f9d2d3;
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.vc-lm-browser-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding: 28px 16px;
+    text-align: center;
+    color: var(--text-muted);
+}
+
+/* the browser owns its own scroll box, and gets more room than the flat list */
+.vc-lm-modal .vc-lm-browser .vc-lm-list {
+    max-height: 360px;
+    margin-block-start: 8px;
+}
+
+.vc-lm-section {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-block: 6px 4px;
+    padding-inline: 2px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: rgb(255 255 255 / 40%);
+}
+
+.vc-lm-section-action,
+.vc-lm-section-toggle {
+    padding: 0;
+    border: none;
+    background: none;
+    color: color-mix(in oklab, var(--vc-lm-accent) 55%, #fff);
+    font: inherit;
+    font-weight: 600;
+    text-transform: none;
+    letter-spacing: normal;
+    cursor: pointer;
+}
+
+.vc-lm-section-toggle {
+    align-self: flex-start;
+    margin-block: 8px 2px;
+    padding-inline: 2px;
+    font-size: 11px;
+    color: var(--text-muted);
+}
+
+.vc-lm-section-action:hover,
+.vc-lm-section-toggle:hover {
+    text-decoration: underline;
+}
+
+.vc-lm-tiles {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
+    gap: 10px;
+    padding-block-end: 4px;
+}
+
+.vc-lm-tile {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 8px;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: background-color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.vc-lm-tile:hover {
+    background: rgb(255 255 255 / 5%);
+}
+
+.vc-lm-tile-selected,
+.vc-lm-tile-selected:hover {
+    background: color-mix(in oklab, var(--vc-lm-accent) 16%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--vc-lm-accent) 40%, transparent);
+}
+
+/* the folder a drag would land in */
+.vc-lm-tile-drop,
+.vc-lm-tile-drop:hover {
+    background: color-mix(in oklab, var(--vc-lm-accent) 22%, transparent);
+    box-shadow:
+        inset 0 0 0 2px var(--vc-lm-accent),
+        0 0 14px color-mix(in oklab, var(--vc-lm-accent) 35%, transparent);
+}
+
+.vc-lm-tile-art {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    aspect-ratio: 1;
+    border-radius: 10px;
+    overflow: hidden;
+    background: linear-gradient(150deg, #23232e, #14141b);
+    box-shadow: inset 0 0 0 1px rgb(255 255 255 / 7%);
+    color: rgb(255 255 255 / 30%);
+}
+
+.vc-lm-tile-art img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+/* the play button rides on the art, the way it does everywhere else */
+.vc-lm-tile-play {
+    position: absolute;
+    inset-block-end: 6px;
+    inset-inline-end: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background: var(--vc-lm-accent);
+    color: #fff;
+    opacity: 0;
+    transform: translateY(4px);
+    cursor: pointer;
+    transition: opacity 0.12s ease, transform 0.12s ease;
+    box-shadow: 0 4px 12px rgb(0 0 0 / 45%);
+}
+
+.vc-lm-tile:hover .vc-lm-tile-play,
+.vc-lm-tile:focus-within .vc-lm-tile-play {
+    opacity: 1;
+    transform: none;
+}
+
+.vc-lm-tile-text {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+}
+
+.vc-lm-tile-name {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-default);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.vc-lm-tile-sub {
+    font-size: 11px;
+    color: var(--text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* the folder being named before it exists */
+.vc-lm-tile-new,
+.vc-lm-tile-new:hover {
+    background: color-mix(in oklab, var(--vc-lm-accent) 10%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--vc-lm-accent) 30%, transparent);
+    cursor: default;
+}
+
+/* inline rename: a field that sits exactly where the name it replaces sat */
+.vc-lm-modal input.vc-lm-name-input {
+    width: 100%;
+    padding: 2px 6px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.vc-lm-row-icon {
+    display: flex;
+    flex: 0 0 auto;
+    color: rgb(255 255 255 / 35%);
+}
+
+.vc-lm-row-selected,
+.vc-lm-row-selected:hover {
+    background: color-mix(in oklab, var(--vc-lm-accent) 16%, transparent);
+}
+
+/* files the player can't decode: still real, still yours to move or rename */
+.vc-lm-row-muted {
+    opacity: 0.55;
+    cursor: default;
+}
+
+.vc-lm-selection-bar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-block-start: 10px;
+    padding: 8px 10px;
+    border-radius: 10px;
+    background: color-mix(in oklab, var(--vc-lm-accent) 12%, rgb(255 255 255 / 4%));
+    box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--vc-lm-accent) 25%, transparent);
+}
+
+.vc-lm-selection-count {
+    flex: 1 1 auto;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-default);
+}
+
+/* the preview inside the "file by tag" confirmation */
+.vc-lm-tidy-plan ul {
+    margin: 8px 0 0;
+    padding-inline-start: 18px;
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+.vc-lm-tidy-plan li {
+    list-style: disc;
+    margin-block-end: 2px;
 }
 
 /* #endregion */

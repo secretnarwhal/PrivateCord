@@ -8,18 +8,19 @@ import { CspPolicies, CssSrc, ImageAndMediaSrc, ImageSrc } from "@main/csp";
 import { RendererSettings } from "@main/settings";
 import { ChildProcess, spawn } from "child_process";
 import { createHash, Hash, randomBytes, timingSafeEqual } from "crypto";
-import { app, BrowserWindow, dialog, globalShortcut, IpcMainInvokeEvent, session } from "electron";
-import { createReadStream, createWriteStream, Dirent, existsSync, WriteStream } from "fs";
-import { mkdir, open, readdir, readFile, rename, rm, stat, unlink, writeFile } from "fs/promises";
+import { app, BrowserWindow, dialog, globalShortcut, IpcMainInvokeEvent, session, shell } from "electron";
+import { constants, createReadStream, createWriteStream, Dirent, existsSync, statSync, WriteStream } from "fs";
+import { access, cp, mkdir, open, readdir, readFile, rename, rm, stat, unlink, writeFile } from "fs/promises";
 import { createServer, IncomingMessage, Server, ServerResponse } from "http";
 import { AddressInfo } from "net";
-import { basename, extname, join, resolve, sep } from "path";
+import { basename, delimiter, dirname, extname, join, resolve, sep } from "path";
 
 import { lookupLyrics, searchLyricCandidates } from "./lyrics";
 import { readTags } from "./tags";
 import type {
-    DownloadJob, Lyrics, LyricsCandidate, LyricsRequest, SearchResult, SearchSource, ServerInfo,
-    Track, TrackMetadata, YtDlpInfo, YtDlpOptions
+    CustomTool, DownloadJob, FileOpResult, FolderDir, FolderFile, FolderListing, Lyrics,
+    LyricsCandidate, LyricsRequest, OrganiseItem, SearchResult, SearchSource, ServerInfo, ToolLine,
+    ToolOutput, ToolRun, Track, TrackMetadata, YtDlpInfo, YtDlpOptions
 } from "./types";
 
 // The renderer streams media from our loopback server, so 127.0.0.1 needs to be
@@ -86,6 +87,21 @@ if (RendererSettings.store.plugins?.LocalMusic?.enabled) {
 // they'd show up in the library and then silently refuse to play.
 const AUDIO_EXTS = new Set([".mp3", ".flac", ".m4a", ".aac", ".ogg", ".oga", ".opus", ".wav", ".weba"]);
 const VIDEO_EXTS = new Set([".mp4", ".m4v", ".webm", ".mov"]);
+
+/**
+ * Cover art the user keeps as a file rather than inside the tags. Served from
+ * /image, which is why the list is a whitelist: it is the only thing that
+ * decides what bytes that endpoint will hand out.
+ */
+const IMAGE_MIME: Record<string, string> = {
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png": "image/png",
+    ".webp": "image/webp",
+    ".gif": "image/gif",
+    ".bmp": "image/bmp",
+    ".avif": "image/avif"
+};
 
 const MIME_TYPES: Record<string, string> = {
     ".mp3": "audio/mpeg",
@@ -231,6 +247,24 @@ async function handleArt(path: string, res: ServerResponse) {
     res.end(picture.data);
 }
 
+/** A cover image kept beside the music, for folders whose tracks embed nothing. */
+async function handleImage(path: string, res: ServerResponse) {
+    const type = IMAGE_MIME[extname(path).toLowerCase()];
+    if (!type) {
+        res.writeHead(404);
+        return res.end();
+    }
+
+    const { size } = await stat(path);
+    res.writeHead(200, {
+        ...CORS_HEADER,
+        "Content-Type": type,
+        "Content-Length": size,
+        "Cache-Control": "no-store"
+    });
+    createReadStream(path).pipe(res);
+}
+
 function startServer(): Promise<ServerInfo> {
     return new Promise((res, rej) => {
         const token = randomBytes(24).toString("hex");
@@ -255,6 +289,7 @@ function startServer(): Promise<ServerInfo> {
 
                 if (url.pathname === "/media") await handleMedia(path, req.headers.range, response);
                 else if (url.pathname === "/art") await handleArt(path, response);
+                else if (url.pathname === "/image") await handleImage(path, response);
                 else {
                     response.writeHead(404);
                     response.end();
@@ -368,8 +403,8 @@ export async function scanFolder(_: IpcMainInvokeEvent, path: string): Promise<T
 export async function readMetadata(_: IpcMainInvokeEvent, path: string): Promise<TrackMetadata | null> {
     if (!isPathAllowed(path)) return null;
 
-    const { title, artist, album, picture } = await readTags(path);
-    return { title, artist, album, hasArt: !!picture };
+    const { title, artist, album, track, disc, picture } = await readTags(path);
+    return { title, artist, album, track, disc, hasArt: !!picture };
 }
 
 export async function readMetadataBatch(_: IpcMainInvokeEvent, paths: string[]): Promise<Record<string, TrackMetadata>> {
@@ -378,12 +413,461 @@ export async function readMetadataBatch(_: IpcMainInvokeEvent, paths: string[]):
     for (const path of paths) {
         if (!isPathAllowed(path)) continue;
 
-        const { title, artist, album, picture } = await readTags(path);
-        result[path] = { title, artist, album, hasArt: !!picture };
+        const { title, artist, album, track, disc, picture } = await readTags(path);
+        result[path] = { title, artist, album, track, disc, hasArt: !!picture };
     }
 
     return result;
 }
+
+// #region file explorer
+
+/**
+ * The library browser is a real file manager: what it lists is what readdir says
+ * is there, and renaming a folder in it renames the folder on disk. Everything
+ * below is therefore written defensively — every path is checked against the
+ * roots the user opened, nothing is ever overwritten, and deletes go to the
+ * recycle bin rather than away.
+ */
+
+/** How many child folders we'll look inside for their counts and cover art. */
+const DIR_PROBE_LIMIT = 400;
+
+/** What a cover file is usually called, next to the music it belongs to. */
+const COVER_NAME = /^(cover|folder|front|album|artwork|art|thumb)$/i;
+
+/** Lyrics kept beside a track; they follow it when it moves. */
+const SIDECAR_EXTS = [".lrc", ".txt"];
+
+/**
+ * Characters no name may hold. This is the Windows set, applied on every
+ * platform: a library that syncs to a Windows machine shouldn't turn into files
+ * that can't be copied there.
+ */
+const BAD_NAME_CHARS = /[<>:"/\\|?*\u0000-\u001f]/;
+const BAD_NAME_CHARS_G = /[<>:"/\\|?*\u0000-\u001f]/g;
+const RESERVED_NAMES = /^(con|prn|aux|nul|com\d|lpt\d)$/i;
+
+function isPlayable(ext: string) {
+    return AUDIO_EXTS.has(ext) || VIDEO_EXTS.has(ext);
+}
+
+function isCoverName(name: string) {
+    return COVER_NAME.test(basename(name, extname(name)));
+}
+
+/** The authorised root a path lives under — the deepest one, if they nest. */
+function rootFor(path: string): string | null {
+    const resolved = resolve(path);
+
+    let best: string | null = null;
+    for (const root of allowedRoots) {
+        if (resolved !== root && !resolved.startsWith(root + sep)) continue;
+        if (!best || root.length > best.length) best = root;
+    }
+
+    return best;
+}
+
+/** Anything the browser is allowed to change: inside a root, but not a root itself. */
+function requireEditable(path: string) {
+    if (!isPathAllowed(path)) throw new Error("That's outside the music folder you opened");
+    if (allowedRoots.has(path))
+        throw new Error("That's your music folder itself — change it from the library instead");
+}
+
+function describeFileError(error: NodeJS.ErrnoException, name: string) {
+    switch (error.code) {
+        case "EPERM":
+        case "EBUSY":
+        case "EACCES":
+            return `${name} is in use — pause playback or close whatever has it open, then try again`;
+        case "ENOENT":
+            return `${name} isn't there any more`;
+        case "EEXIST":
+        case "ENOTEMPTY":
+            return `Something called ${name} is already there`;
+        case "ENOSPC":
+            return "The drive is full";
+        default:
+            return error.message;
+    }
+}
+
+/** Validates a name typed by the user, and hands back the trimmed version. */
+function checkName(raw: string) {
+    const name = raw.trim();
+
+    if (!name || name === "." || name === "..") throw new Error("That name can't be used");
+    if (name.startsWith(".")) throw new Error("Names starting with a dot are hidden — pick another");
+    if (BAD_NAME_CHARS.test(name)) throw new Error('A name can\'t contain < > : " / \\ | ? *');
+    if (name.length > 200) throw new Error("That name is too long");
+
+    if (process.platform === "win32") {
+        if (RESERVED_NAMES.test(basename(name, extname(name))))
+            throw new Error(`Windows reserves the name “${name}”`);
+        if (/[. ]$/.test(name)) throw new Error("Windows won't keep a name that ends in a dot or a space");
+    }
+
+    return name;
+}
+
+/** The same rules, applied to a tag rather than to something the user typed. */
+function toSegment(value: string, fallback: string) {
+    const clean = value
+        .replace(BAD_NAME_CHARS_G, " ")
+        .replace(/\s+/g, " ")
+        .trim()
+        .replace(/[. ]+$/, "")
+        .slice(0, 120)
+        .trim();
+
+    if (!clean || clean.startsWith(".") || RESERVED_NAMES.test(clean)) return fallback;
+    return clean;
+}
+
+/**
+ * What a child folder holds, for the tile that represents it: how much is in
+ * there and what picture to put on it. One readdir per folder, which is why it
+ * is skipped entirely once a directory has an unreasonable number of them.
+ */
+async function describeDir(path: string, name: string, probe: boolean): Promise<FolderDir> {
+    const dir: FolderDir = { path, name, trackCount: -1, folderCount: -1, cover: null };
+    if (!probe) return dir;
+
+    let entries: Dirent[];
+    try {
+        entries = await readdir(path, { withFileTypes: true });
+    } catch {
+        return dir; // unreadable: still list it, just don't claim to know what's inside
+    }
+
+    dir.trackCount = 0;
+    dir.folderCount = 0;
+
+    let anyImage: string | null = null;
+    for (const entry of entries) {
+        if (entry.name.startsWith(".")) continue;
+
+        if (entry.isDirectory()) {
+            dir.folderCount++;
+            continue;
+        }
+        if (!entry.isFile()) continue;
+
+        const ext = extname(entry.name).toLowerCase();
+        if (isPlayable(ext)) dir.trackCount++;
+        else if (IMAGE_MIME[ext]) {
+            if (!dir.cover && isCoverName(entry.name)) dir.cover = join(path, entry.name);
+            anyImage ??= join(path, entry.name);
+        }
+    }
+
+    dir.cover ??= anyImage;
+    return dir;
+}
+
+const byName = (a: { name: string; }, b: { name: string; }) =>
+    a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" });
+
+export async function listFolder(_: IpcMainInvokeEvent, path: string): Promise<FolderListing> {
+    const dir = resolve(path);
+    const root = rootFor(dir);
+    if (!root) throw new Error("That folder is outside the music folder you opened");
+
+    let entries: Dirent[];
+    try {
+        entries = await readdir(dir, { withFileTypes: true });
+    } catch (e) {
+        throw new Error(describeFileError(e as NodeJS.ErrnoException, basename(dir) || dir));
+    }
+
+    // dotfiles are skipped for the same reason the scanner skips them: they are
+    // never the user's music, and our own bookkeeping lives among them
+    const visible = entries.filter(entry => !entry.name.startsWith("."));
+    const childDirs = visible.filter(entry => entry.isDirectory());
+    const probe = childDirs.length <= DIR_PROBE_LIMIT;
+
+    const dirs = await Promise.all(
+        childDirs.map(entry => describeDir(join(dir, entry.name), entry.name, probe))
+    );
+
+    let cover: string | null = null;
+    let anyImage: string | null = null;
+
+    const files = (await Promise.all(visible.map(async (entry): Promise<FolderFile | null> => {
+        if (!entry.isFile()) return null;
+
+        const full = join(dir, entry.name);
+        const ext = extname(entry.name).toLowerCase();
+
+        if (IMAGE_MIME[ext]) {
+            if (!cover && isCoverName(entry.name)) cover = full;
+            anyImage ??= full;
+        }
+
+        try {
+            const { size } = await stat(full);
+            return {
+                path: full,
+                name: entry.name,
+                ext,
+                size,
+                isVideo: VIDEO_EXTS.has(ext),
+                playable: isPlayable(ext)
+            };
+        } catch {
+            return null; // vanished between readdir and stat
+        }
+    }))).filter((file): file is FolderFile => !!file);
+
+    const crumbs = [{ name: basename(root) || root, path: root }];
+    let walk = root;
+    for (const part of dir.slice(root.length).split(sep).filter(Boolean)) {
+        walk = join(walk, part);
+        crumbs.push({ name: part, path: walk });
+    }
+
+    return {
+        path: dir,
+        root,
+        parent: dir === root ? null : dirname(dir),
+        crumbs,
+        dirs: dirs.sort(byName),
+        files: files.sort(byName),
+        cover: cover ?? anyImage
+    };
+}
+
+/** A track's lyrics file, so a moved song doesn't leave its words behind. */
+function sidecarsOf(path: string) {
+    if (!isPlayable(extname(path).toLowerCase())) return [];
+
+    const stem = join(dirname(path), basename(path, extname(path)));
+    return SIDECAR_EXTS.map(ext => stem + ext).filter(existsSync);
+}
+
+/** rename(), falling back to copy-then-delete when the ends are on different drives. */
+async function relocate(from: string, to: string) {
+    try {
+        await rename(from, to);
+    } catch (e) {
+        if ((e as NodeJS.ErrnoException).code !== "EXDEV") throw e;
+
+        await cp(from, to, { recursive: true, errorOnExist: true, force: false });
+        await rm(from, { recursive: true, force: true });
+    }
+}
+
+/**
+ * Runs a batch of moves. One entry failing is reported and stepped over rather
+ * than abandoning the rest — half a drag landing is still better than none of it,
+ * and the browser reloads from disk afterwards either way.
+ */
+async function runMoves(moves: { from: string; to: string; }[]): Promise<FileOpResult> {
+    const result: FileOpResult = { moved: [], removed: [], failed: [] };
+
+    for (const { from, to } of moves) {
+        const sidecars = sidecarsOf(from);
+
+        try {
+            await relocate(from, to);
+            result.moved.push({ from, to });
+        } catch (e) {
+            result.failed.push({
+                path: from,
+                error: describeFileError(e as NodeJS.ErrnoException, `“${basename(from)}”`)
+            });
+            continue;
+        }
+
+        // the lyrics follow the song, but a sidecar that won't move is not worth
+        // failing a move that has already happened over
+        const stem = join(dirname(to), basename(to, extname(to)));
+        for (const sidecar of sidecars) {
+            const target = stem + extname(sidecar);
+            if (existsSync(target)) continue;
+
+            try {
+                await relocate(sidecar, target);
+                result.moved.push({ from: sidecar, to: target });
+            } catch { }
+        }
+    }
+
+    return result;
+}
+
+export async function createFolder(_: IpcMainInvokeEvent, parent: string, name: string): Promise<string> {
+    const dir = resolve(parent);
+    if (!isPathAllowed(dir)) throw new Error("That's outside the music folder you opened");
+
+    const target = join(dir, checkName(name));
+    if (existsSync(target)) throw new Error(`“${basename(target)}” is already there`);
+
+    await mkdir(target);
+    return target;
+}
+
+export async function renameEntry(_: IpcMainInvokeEvent, path: string, name: string): Promise<FileOpResult> {
+    const from = resolve(path);
+    requireEditable(from);
+
+    // a file keeps its extension unless the user typed one themselves, so
+    // renaming "01 track.mp3" to "Intro" doesn't quietly make it unplayable
+    const suffix = extname(from);
+    const typed = checkName(name);
+    const isDir = statSync(from, { throwIfNoEntry: false })?.isDirectory() ?? false;
+    const keepExt = suffix && !isDir && !extname(typed);
+
+    const to = join(dirname(from), keepExt ? typed + suffix : typed);
+    if (to === from) return { moved: [], removed: [], failed: [] };
+    if (existsSync(to)) throw new Error(`“${basename(to)}” is already there`);
+
+    return runMoves([{ from, to }]);
+}
+
+export async function moveEntries(
+    _: IpcMainInvokeEvent,
+    paths: string[],
+    destination: string
+): Promise<FileOpResult> {
+    const dest = resolve(destination);
+    if (!isPathAllowed(dest)) throw new Error("That folder is outside the music folder you opened");
+    if (!(await stat(dest).catch(() => null))?.isDirectory()) throw new Error("That isn't a folder any more");
+
+    const failed: FileOpResult["failed"] = [];
+    const moves: { from: string; to: string; }[] = [];
+
+    for (const path of paths) {
+        const from = resolve(path);
+        const name = basename(from);
+
+        try {
+            requireEditable(from);
+        } catch (e) {
+            failed.push({ path: from, error: e instanceof Error ? e.message : String(e) });
+            continue;
+        }
+
+        if (dirname(from) === dest) continue; // already where it was dropped
+
+        // a folder can't hold itself, and neither can anything under it
+        if (dest === from || dest.startsWith(from + sep)) {
+            failed.push({ path: from, error: `“${name}” can't be moved inside itself` });
+            continue;
+        }
+
+        const to = join(dest, name);
+        if (existsSync(to)) {
+            failed.push({ path: from, error: `“${name}” is already in that folder` });
+            continue;
+        }
+
+        moves.push({ from, to });
+    }
+
+    const done = await runMoves(moves);
+    return { ...done, failed: [...failed, ...done.failed] };
+}
+
+export async function trashEntries(_: IpcMainInvokeEvent, paths: string[]): Promise<FileOpResult> {
+    const result: FileOpResult = { moved: [], removed: [], failed: [] };
+
+    for (const path of paths) {
+        const target = resolve(path);
+
+        try {
+            requireEditable(target);
+            // the recycle bin, never unlink: a misclick in a file manager has to be
+            // something the user can walk back
+            await shell.trashItem(target);
+            result.removed.push(target);
+
+            // the lyrics went with the song when it moved; they go with it here too
+            for (const sidecar of sidecarsOf(target)) {
+                try {
+                    await shell.trashItem(sidecar);
+                    result.removed.push(sidecar);
+                } catch { }
+            }
+        } catch (e) {
+            result.failed.push({
+                path: target,
+                error: e instanceof Error ? `“${basename(target)}” — ${e.message}` : String(e)
+            });
+        }
+    }
+
+    return result;
+}
+
+export async function revealEntry(_: IpcMainInvokeEvent, path: string): Promise<void> {
+    const target = resolve(path);
+    if (!isPathAllowed(target)) throw new Error("That's outside the music folder you opened");
+    if (!existsSync(target)) throw new Error("That isn't there any more");
+
+    shell.showItemInFolder(target);
+}
+
+/**
+ * Files the tags into `<root>/<artist>/<album>/`. The renderer works out which
+ * artist and album (it already holds every track's tags) and this decides what
+ * those are allowed to look like as folder names — a tag is not a path, and is
+ * never treated as one.
+ */
+export async function organiseTracks(
+    _: IpcMainInvokeEvent,
+    root: string,
+    items: OrganiseItem[]
+): Promise<FileOpResult> {
+    const base = resolve(root);
+    if (!isPathAllowed(base)) throw new Error("That's outside the music folder you opened");
+
+    const failed: FileOpResult["failed"] = [];
+    const moves: { from: string; to: string; }[] = [];
+
+    for (const item of items) {
+        const from = resolve(item.path);
+
+        try {
+            requireEditable(from);
+        } catch (e) {
+            failed.push({ path: from, error: e instanceof Error ? e.message : String(e) });
+            continue;
+        }
+
+        const dir = join(
+            base,
+            toSegment(item.artist ?? "", "Unknown Artist"),
+            toSegment(item.album ?? "", "Unknown Album")
+        );
+        if (dirname(from) === dir) continue; // already filed
+
+        const to = join(dir, basename(from));
+        if (existsSync(to)) {
+            failed.push({ path: from, error: `“${basename(from)}” is already in ${dir}` });
+            continue;
+        }
+
+        try {
+            await mkdir(dir, { recursive: true });
+        } catch (e) {
+            failed.push({
+                path: from,
+                error: describeFileError(e as NodeJS.ErrnoException, `“${basename(dir)}”`)
+            });
+            continue;
+        }
+
+        moves.push({ from, to });
+    }
+
+    const done = await runMoves(moves);
+    return { ...done, failed: [...failed, ...done.failed] };
+}
+
+// #endregion
 
 /**
  * Lyrics for whatever is playing. The path is only consulted when it is inside a
@@ -937,6 +1421,559 @@ export async function clearFinishedDownloads(_: IpcMainInvokeEvent) {
         if (job.status !== "running") jobs.delete(id);
     }
     publishJobs(true);
+}
+
+// #endregion
+
+// #region custom tools
+
+/**
+ * Runs whatever the user configured — a python script, a shell one-liner, another
+ * downloader entirely. The plugin knows nothing about the tool beyond how to start
+ * it, so the deal is deliberately small: we spawn it, keep every line it prints,
+ * and let the user type back at it.
+ *
+ * The process is owned here, in main, and not by the modal that started it. That is
+ * the whole reason closing the Download window (or reloading Discord) doesn't
+ * interrupt a download: the renderer is a viewer onto this map, never its owner.
+ *
+ * A tool that wants a progress bar instead of just scrollback can opt in by
+ * printing prefixed lines — see TOOL_PROTOCOL. Anything unrecognised is still
+ * shown verbatim, so a tool that knows none of this works fine.
+ */
+
+/** How much scrollback a run keeps. Older lines are dropped from the head. */
+const MAX_TOOL_LINES = 3000;
+/** A line-noisy tool shouldn't get to drive the SSE stream at its own pace. */
+const TOOL_FLUSH_MS = 120;
+/** A tool printing without newlines still has to reach the console eventually. */
+const MAX_PARTIAL = 4096;
+
+interface RunState {
+    run: ToolRun;
+    /** the tail of the output; `run.total` counts every line ever produced */
+    lines: ToolLine[];
+    proc: ChildProcess | null;
+    /** produced since the last flush, waiting to go out over the event stream */
+    pending: ToolLine[];
+    /** absolute index of pending[0] */
+    pendingFrom: number;
+    /** trailing text from a chunk that ended mid-line, per stream */
+    partial: { out: string; err: string; };
+    /** the tool's own last complaint, preferred over "exited with code n" */
+    lastError: string;
+}
+
+const runs = new Map<string, RunState>();
+let toolFlush: NodeJS.Timeout | null = null;
+
+/** Absolute index of lines[0], once the head has started falling off. */
+function firstIndex(state: RunState) {
+    return state.run.total - state.lines.length;
+}
+
+function flushTools() {
+    if (toolFlush) clearTimeout(toolFlush);
+    toolFlush = null;
+
+    for (const state of runs.values()) {
+        if (!state.pending.length) continue;
+
+        broadcast("toolOutput", {
+            runId: state.run.id,
+            from: state.pendingFrom,
+            total: state.run.total,
+            lines: state.pending
+        } satisfies ToolOutput);
+
+        state.pending = [];
+        state.pendingFrom = state.run.total;
+    }
+
+    broadcast("toolRuns", [...runs.values()].map(s => s.run));
+}
+
+function publishTools(immediate = false) {
+    if (immediate) return flushTools();
+    toolFlush ??= setTimeout(flushTools, TOOL_FLUSH_MS);
+}
+
+function appendLine(state: RunState, stream: ToolLine["stream"], text: string) {
+    const line: ToolLine = { stream, text };
+
+    state.lines.push(line);
+    state.pending.push(line);
+    state.run.total++;
+
+    if (state.lines.length > MAX_TOOL_LINES)
+        state.lines.splice(0, state.lines.length - MAX_TOOL_LINES);
+
+    publishTools();
+}
+
+/**
+ * The opt-in line protocol. Everything here is optional — a tool that prints none
+ * of it just gets a spinning bar and its raw output, which is the normal case.
+ */
+const TOOL_PROTOCOL = /^\[(log|progress|done|error|status|session|break)\]\s?(.*)$/;
+
+function consumeToolLine(state: RunState, text: string) {
+    const match = TOOL_PROTOCOL.exec(text);
+    if (!match) return;
+
+    const [, kind, body] = match;
+    const trimmed = body.trim();
+
+    switch (kind) {
+        case "progress": {
+            const percent = Number(trimmed);
+            if (Number.isFinite(percent)) state.run.percent = Math.max(0, Math.min(100, percent));
+            break;
+        }
+
+        case "done":
+            state.run.outputPath = trimmed || null;
+            state.run.percent = 100;
+            state.run.message = trimmed ? basename(trimmed) : "Done";
+            break;
+
+        case "error":
+            // remembered rather than applied: the run is only failed by a non-zero
+            // exit, so a tool that reports an error and then recovers still counts
+            state.lastError = trimmed || state.lastError;
+            state.run.message = trimmed || state.run.message;
+            break;
+
+        default:
+            if (trimmed) state.run.message = trimmed;
+    }
+}
+
+function consumeToolChunk(state: RunState, stream: "out" | "err", chunk: string) {
+    const parts = (state.partial[stream] + chunk).split(/\r?\n/);
+
+    // whatever trails the last newline is an unfinished line, held for the next chunk
+    let rest = parts.pop() ?? "";
+    // a bare \r is a progress bar redrawing in place; only the newest draw matters
+    if (rest.includes("\r")) rest = rest.slice(rest.lastIndexOf("\r") + 1);
+    // ...but a tool that never emits a newline at all still has to show up
+    if (rest.length > MAX_PARTIAL) {
+        parts.push(rest);
+        rest = "";
+    }
+    state.partial[stream] = rest;
+
+    for (const raw of parts) {
+        const line = raw.includes("\r") ? raw.slice(raw.lastIndexOf("\r") + 1) : raw;
+
+        appendLine(state, stream, line);
+        if (stream === "err" && line.trim()) state.lastError = line.trim();
+        consumeToolLine(state, line);
+    }
+}
+
+// #region finding the program
+
+function isFile(path: string) {
+    try {
+        return statSync(path).isFile();
+    } catch {
+        return false;
+    }
+}
+
+/**
+ * Finds a bare command name on the PATH, returning an absolute path.
+ *
+ * Handing the bare name to spawn would be the obvious thing, but the platform's
+ * own search is not dependable: a single malformed PATH entry (a stray quote is
+ * enough) makes Windows give up on the whole search, and every command then comes
+ * back ENOENT even though it is plainly installed. Doing the walk here means one
+ * bad entry costs that entry and nothing else.
+ */
+function resolveOnPath(name: string): string | null {
+    // anything with a separator in it is already a path, not a name to look up
+    if (name.includes("/") || name.includes(sep)) return null;
+
+    const extensions = process.platform === "win32"
+        ? ["", ...(process.env.PATHEXT ?? ".COM;.EXE;.BAT;.CMD").split(";").filter(Boolean)]
+        : [""];
+
+    for (const entry of (process.env.PATH ?? "").split(delimiter)) {
+        // entries can arrive quoted, and sometimes half-quoted
+        const dir = entry.trim().replace(/^["']+|["']+$/g, "");
+        if (!dir) continue;
+
+        for (const extension of extensions) {
+            const candidate = join(dir, name + extension);
+            if (isFile(candidate)) return candidate;
+        }
+    }
+
+    return null;
+}
+
+/**
+ * Scripts can't be executed on their own — Windows can only start a real binary,
+ * so pointing the command at a .py fails with EFTYPE before a line of it runs.
+ * The names are tried in order and the first one actually installed wins; `py`
+ * leads for .py because the Windows launcher picks a real Python, while a bare
+ * `python` is so often some unrelated virtualenv's shim.
+ */
+const INTERPRETERS: Record<string, string[]> = {
+    ".py": ["py", "python3", "python"],
+    ".js": ["node"],
+    ".mjs": ["node"],
+    ".cjs": ["node"],
+    ".rb": ["ruby"],
+    ".pl": ["perl"],
+    ".sh": ["bash", "sh"],
+    ".ps1": ["pwsh", "powershell"]
+};
+
+/** The program to actually start, and whatever has to come before the user's args. */
+interface LaunchPlan {
+    program: string;
+    leading: string[];
+}
+
+async function isExecutable(path: string) {
+    try {
+        await access(path, constants.X_OK);
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+async function planLaunch(command: string): Promise<LaunchPlan> {
+    const direct = { program: resolveOnPath(command) ?? command, leading: [] };
+
+    const names = INTERPRETERS[extname(command).toLowerCase()];
+    if (!names) return direct;
+
+    // a script carrying a shebang and an exec bit already knows how to start
+    // itself, and it knows better than this table does — leave it alone
+    if (process.platform !== "win32" && await isExecutable(command)) return direct;
+
+    for (const name of names) {
+        const program = resolveOnPath(name);
+        if (!program) continue;
+
+        // powershell has to be told this is a script rather than a command to eval
+        const flag = /pwsh|powershell/.test(name) ? ["-File"] : [];
+        return { program, leading: [...flag, command] };
+    }
+
+    // nothing suitable is installed; let the spawn fail and say so properly
+    return direct;
+}
+
+// #endregion
+
+/** What a run can be told about the moment it was started. */
+interface ToolContext {
+    url: string;
+    query: string;
+    folder: string;
+    tool: string;
+}
+
+const PLACEHOLDER = /\{(url|query|folder|tool)\}/g;
+
+function fillPlaceholders(text: string, ctx: ToolContext) {
+    return text.replace(PLACEHOLDER, (_, key: keyof ToolContext) => ctx[key] ?? "");
+}
+
+/** Quoting for the shell path only — the normal path never builds a command string. */
+function shellQuote(value: string) {
+    return process.platform === "win32"
+        ? `"${value.replace(/"/g, '""')}"`
+        : `'${value.replace(/'/g, "'\\''")}'`;
+}
+
+function buildToolArgs(tool: CustomTool, ctx: ToolContext) {
+    // split first, substitute second: a value containing spaces then stays one
+    // argument instead of being torn into several by whatever it happens to hold
+    return splitArgs(tool.args)
+        .map(token => ({ token, filled: fillPlaceholders(token, ctx) }))
+        // a placeholder that resolved to nothing should disappear, not become ""
+        .filter(({ token, filled }) => filled !== "" || token === "")
+        .map(({ filled }) => filled);
+}
+
+async function checkToolCwd(cwd: string) {
+    if (!cwd) return "";
+
+    const dir = resolve(cwd);
+    try {
+        if (!(await stat(dir)).isDirectory()) throw new Error("not a directory");
+    } catch {
+        throw new Error(`The folder for this tool doesn't exist: ${dir}`);
+    }
+
+    return dir;
+}
+
+export async function startTool(
+    _: IpcMainInvokeEvent,
+    tool: CustomTool,
+    context: Partial<ToolContext>
+): Promise<ToolRun> {
+    const command = tool.command.trim();
+    if (!command) throw new Error("This tool has no command to run — set one first");
+
+    const cwd = await checkToolCwd(tool.cwd.trim());
+
+    const ctx: ToolContext = {
+        url: context.url ?? "",
+        query: context.query ?? "",
+        folder: context.folder ?? "",
+        tool: tool.name
+    };
+
+    const filledCommand = fillPlaceholders(command, ctx);
+    const args = buildToolArgs(tool, ctx);
+
+    // a script goes behind its interpreter, and a bare name becomes a real path
+    const plan = tool.shell
+        ? { program: filledCommand, leading: [] as string[] }
+        : await planLaunch(filledCommand);
+    const argv = [...plan.leading, ...args];
+
+    // in shell mode the shell does the splitting, so we hand over one string and
+    // quote every substituted value into it rather than trusting what they contain
+    const line = tool.shell
+        ? [filledCommand, ...splitArgs(tool.args).map(token => {
+            const filled = fillPlaceholders(token, ctx);
+            return filled === token ? token : shellQuote(filled);
+        })].join(" ")
+        : "";
+
+    const id = randomBytes(8).toString("hex");
+    const run: ToolRun = {
+        id,
+        toolId: tool.id,
+        toolName: tool.name,
+        commandLine: tool.shell ? line : [plan.program, ...argv].join(" "),
+        status: "running",
+        percent: -1,
+        message: "Starting…",
+        startedAt: Date.now(),
+        outputPath: null,
+        total: 0
+    };
+
+    const state: RunState = {
+        run,
+        lines: [],
+        proc: null,
+        pending: [],
+        pendingFrom: 0,
+        partial: { out: "", err: "" },
+        lastError: ""
+    };
+    runs.set(id, state);
+
+    appendLine(state, "meta", `$ ${run.commandLine}`);
+    if (cwd) appendLine(state, "meta", `  in ${cwd}`);
+
+    let proc: ChildProcess;
+    try {
+        proc = tool.shell
+            ? spawn(line, { cwd: cwd || undefined, env: spawnEnv(), shell: true, windowsHide: true })
+            : spawn(plan.program, argv, { cwd: cwd || undefined, env: spawnEnv(), windowsHide: true });
+    } catch (e) {
+        // EFTYPE and friends throw synchronously rather than arriving on "error".
+        // The run is already in the map, so it has to be failed here or it sits
+        // at "Starting…" with nothing left to move it along
+        run.status = "error";
+        run.message = describeToolSpawnError(e as NodeJS.ErrnoException, plan.program);
+        appendLine(state, "err", run.message);
+        publishTools(true);
+        return run;
+    }
+
+    state.proc = proc;
+    run.message = "Running";
+
+    proc.stdout?.on("data", chunk => consumeToolChunk(state, "out", String(chunk)));
+    proc.stderr?.on("data", chunk => consumeToolChunk(state, "err", String(chunk)));
+    // a tool that exits while we still hold its stdin would otherwise raise EPIPE
+    proc.stdin?.on("error", () => { });
+
+    proc.on("error", e => {
+        state.proc = null;
+        run.status = "error";
+        run.message = describeToolSpawnError(e, plan.program);
+        appendLine(state, "err", run.message);
+        publishTools(true);
+    });
+
+    proc.on("close", code => {
+        state.proc = null;
+
+        // flush whatever the tool printed without a trailing newline
+        for (const stream of ["out", "err"] as const) {
+            if (state.partial[stream]) {
+                appendLine(state, stream, state.partial[stream]);
+                state.partial[stream] = "";
+            }
+        }
+
+        if (run.status === "running") {
+            if (code === 0) {
+                run.status = "done";
+                run.percent = 100;
+                if (!run.outputPath) run.message = "Done";
+            } else {
+                run.status = "error";
+                run.message = state.lastError || `${tool.name} exited with code ${code}`;
+            }
+        }
+
+        appendLine(state, "meta", `— exited with code ${code}`);
+        publishTools(true);
+    });
+
+    publishTools(true);
+    return run;
+}
+
+function describeToolSpawnError(error: NodeJS.ErrnoException, command: string) {
+    // the extension table covers the usual scripts, so reaching this means either
+    // an unusual one or an interpreter that isn't installed
+    if (error.code === "EFTYPE" || error.code === "ENOEXEC")
+        return `${command} isn't a program this system can run on its own — `
+            + "put the interpreter (py, node, bash) in Command and this file first in Arguments";
+    if (error.code === "ENOENT")
+        return `Could not find ${command} — give the tool an absolute path, or make sure it's on your PATH`;
+    if (error.code === "EACCES")
+        return `${command} is not executable — try chmod +x ${command}`;
+    return error.message;
+}
+
+export async function getToolRuns(_: IpcMainInvokeEvent): Promise<ToolRun[]> {
+    return [...runs.values()].map(s => s.run);
+}
+
+/**
+ * Hands back the scrollback from `from` onwards. A console that reopened knows
+ * nothing, so it asks from 0 and gets whatever survived the ring buffer — the
+ * returned `from` says where that actually starts.
+ */
+export async function getToolOutput(_: IpcMainInvokeEvent, id: string, from = 0): Promise<ToolOutput | null> {
+    const state = runs.get(id);
+    if (!state) return null;
+
+    const start = Math.max(from, firstIndex(state));
+
+    return {
+        runId: id,
+        from: start,
+        total: state.run.total,
+        lines: state.lines.slice(start - firstIndex(state))
+    };
+}
+
+/** Types a line at the running tool, echoed into the console so it's visible. */
+export async function writeToolInput(_: IpcMainInvokeEvent, id: string, text: string): Promise<boolean> {
+    const state = runs.get(id);
+    if (!state?.proc?.stdin?.writable) return false;
+
+    appendLine(state, "meta", `> ${text}`);
+    state.proc.stdin.write(text + "\n");
+    publishTools(true);
+    return true;
+}
+
+export async function cancelTool(_: IpcMainInvokeEvent, id: string) {
+    const state = runs.get(id);
+    if (!state) return;
+
+    if (state.run.status === "running") {
+        // a running row with no process behind it is a leftover from a spawn that
+        // never reported back — either way it has to stop claiming to be running
+        state.run.status = "cancelled";
+        state.run.message = state.proc ? "Cancelled" : "Stopped";
+        appendLine(state, "meta", "— cancelled");
+    }
+
+    if (state.proc) {
+        killProcess(state.proc);
+        state.proc = null;
+    }
+
+    publishTools(true);
+}
+
+export async function removeToolRun(_: IpcMainInvokeEvent, id: string) {
+    const state = runs.get(id);
+    if (state?.proc) killProcess(state.proc);
+
+    runs.delete(id);
+    publishTools(true);
+}
+
+export async function clearFinishedToolRuns(_: IpcMainInvokeEvent) {
+    for (const [id, state] of runs) {
+        if (state.run.status !== "running") runs.delete(id);
+    }
+    publishTools(true);
+}
+
+/** Kills every running tool — for when the plugin itself is being shut down. */
+export async function stopTools(_: IpcMainInvokeEvent) {
+    for (const state of runs.values()) {
+        if (state.proc) killProcess(state.proc);
+        state.proc = null;
+    }
+    runs.clear();
+}
+
+/** Directory picker for a tool's working folder. Deliberately not a music root. */
+export async function pickToolFolder(e: IpcMainInvokeEvent): Promise<string | null> {
+    const window = BrowserWindow.fromWebContents(e.sender);
+    const options = {
+        properties: ["openDirectory" as const],
+        title: "Choose the folder your downloader lives in"
+    };
+
+    const { canceled, filePaths } = window
+        ? await dialog.showOpenDialog(window, options)
+        : await dialog.showOpenDialog(options);
+
+    return canceled || !filePaths.length ? null : resolve(filePaths[0]);
+}
+
+/**
+ * File picker for the command itself. Picking a script is the natural thing to do
+ * and the one thing that cannot work — nothing executes a .py directly — so the
+ * split is done here: the interpreter becomes the command, the script becomes the
+ * first argument, and what comes back is a configuration that actually runs.
+ */
+export async function pickToolCommand(
+    e: IpcMainInvokeEvent
+): Promise<{ command: string; args: string; } | null> {
+    const window = BrowserWindow.fromWebContents(e.sender);
+    const options = {
+        properties: ["openFile" as const],
+        title: "Choose the program or script to run"
+    };
+
+    const { canceled, filePaths } = window
+        ? await dialog.showOpenDialog(window, options)
+        : await dialog.showOpenDialog(options);
+
+    if (canceled || !filePaths.length) return null;
+
+    const plan = await planLaunch(resolve(filePaths[0]));
+
+    return {
+        command: plan.program,
+        // the args field is re-split on whitespace later, so a path has to survive it
+        args: plan.leading.map(part => /\s/.test(part) ? `"${part}"` : part).join(" ")
+    };
 }
 
 // #endregion

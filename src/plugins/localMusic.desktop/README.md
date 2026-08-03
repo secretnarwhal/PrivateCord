@@ -18,6 +18,9 @@ process:
 - paths are rejected unless they resolve inside a folder the user explicitly
   opened through the folder picker
 - `Range` requests are supported, which is what makes seeking and large video work
+- `/media` streams a file, `/art` serves the cover art out of its tags, and
+  `/image` serves a cover image file sitting beside the music (`cover.jpg` and
+  friends) — all three behind the same token and path checks
 - `/events` is a Server-Sent Events stream. Plugin natives are invoke-only, so
   this is how the main process pushes media key presses and download progress
   back to the renderer without the renderer polling for them
@@ -45,16 +48,85 @@ result thumbnails.
 There is no separate control bar: everything lives on the panel itself. Click to
 play/pause, double click (or ⛶) for fullscreen, ⇱ pops the panel out of the
 sidebar to float over the client, ⧉ opens the library modal — folder picker,
-search, track list, the panel toggle, and **Download…** — and ☰ opens the same
+search, the folder browser, and **Download…** — and ☰ opens the same
 modal on the queue, with a badge showing how many tracks are waiting. Shuffle and
 repeat sit right in the transport row (repeat cycles off → all → one).
 
 Volume works like YouTube's: the 🔊 icon mutes on click, and hovering it pops up
 a small vertical slider to drag (the scroll wheel over it nudges the volume too).
 
+### Browsing your library
+
+The **Library** tab is a file manager pointed at your music folder. Every tile is
+a real directory and every row is a real file, so what you see is what a file
+explorer would show you — and what you do here happens on disk: renaming a folder
+renames it, dragging an album onto another artist moves those files, and deleting
+sends the real thing to the recycle bin.
+
+It expects the usual shape — **Artist / Album / Songs** — and names each level
+after it, so the folders at the top read as *artists*, the folders inside one as
+*albums*, and anything deeper as plain folders. Nothing is enforced: a folder of
+loose files browses perfectly well, the convention only decides what the labels
+say and what **File by artist / album** means.
+
+```
+┌──────────────────────────────────────────────┐
+│ ↑  ▤ Music / Boards of Canada / Geogaddi  ▶ ⊞⧉│  <- crumbs (drop targets) + folder actions
+├──────────────────────────────────────────────┤
+│ 2 ALBUMS                                     │
+│ ┌────────┐ ┌────────┐                        │
+│ │ cover ▶│ │ cover ▶│    <- tiles: cover art, "12 songs", drag to move
+│ └────────┘ └────────┘                        │
+│ 23 SONGS                                     │
+│ ♪ Music Is Math — Boards of Canada    ⏭ ＋    │
+│ ♪ Beware the Friendly Stranger        ⏭ ＋    │
+│ Show 3 other files                           │
+└──────────────────────────────────────────────┘
+```
+
+- **Opening things** — click a folder to go into it, click a song to play it. The
+  breadcrumbs and ↑ go back up; the browser remembers where you were.
+- **Playing a folder** — ▶ on a tile plays everything inside it, subfolders
+  included, and lines the rest up in the queue. ▶ in the toolbar does the same
+  for the folder you are standing in.
+- **Album order** — songs are listed by their disc and track numbers rather than
+  by file name, so an album reads the way it plays. The tags are what say so, and
+  a folder whose files carry no track numbers stays in name order. The library
+  itself is re-sorted the same way once the background tag pass has been over it,
+  which is what makes ⏭ walk an album in order rather than alphabetically.
+- **Selecting** — ctrl-click picks several, shift-click picks a range. A bar
+  appears with Play, Queue, Move up, File by tag and Delete for the lot.
+- **Moving** — drag any tile or row onto a folder tile, onto a breadcrumb, or
+  onto ↑. The drop target lights up, and a drag that started on a selection
+  carries the whole selection.
+- **Renaming** — right click → *Rename…* edits the name in place. A file keeps
+  its extension unless you type one yourself, so a song can't be renamed into
+  something unplayable by accident.
+- **New folders** — ⊞ makes one where you are, named inline before it exists.
+- **File by artist / album** — files tracks into `<music folder>/<artist>/<album>/`
+  using the tags already read for the library, after showing you exactly what it
+  would move. Loose songs sitting at the top level get a shortcut for it.
+- **Cover art** — a `cover.jpg` (or `folder`/`front`/`album`/`artwork`) in the
+  folder, falling back to the embedded art of a track inside it.
+- **Other files** — anything the player can't decode is listed behind *Show N
+  other files*: still yours to rename, move or delete, just not to play.
+- **Searching** switches back to the flat list of the whole library, because a
+  search that only looked in the folder you happen to be standing in would be the
+  least useful kind.
+
+A track's `.lrc` / `.txt` lyrics sidecar follows it when it moves or is renamed
+and goes to the recycle bin with it, the queue keeps pointing at whatever it
+pointed at before, and a track that moves while it is playing keeps playing.
+
+Nothing outside the folder you opened can be listed, moved or deleted, the folder
+itself can't be renamed away from under the library, names are checked against
+what the filesystem will actually accept, and nothing is ever overwritten — a
+collision is reported rather than resolved. Deletes go to the recycle bin, never
+to `unlink`.
+
 ### The queue
 
-The modal has two tabs: **Library** and **Up next**.
+The modal has three tabs: **Library**, **Up next** and **Listen along**.
 
 Clicking a track in the library plays it immediately, as it always did. Hovering
 a row also reveals two buttons that put it in the queue instead:
@@ -376,8 +448,8 @@ Only what Chromium can actually decode: `mp3`, `flac`, `m4a`, `aac`, `ogg`,
 `mkv`, `avi`, `wmv` and `wma` are deliberately excluded — including them would
 put files in the library that silently refuse to play.
 
-Tags — title, artist, album, cover art and any embedded lyrics — are read for all
-of them:
+Tags — title, artist, album, track and disc number, cover art and any embedded
+lyrics — are read for all of them:
 
 | format | read from |
 | --- | --- |

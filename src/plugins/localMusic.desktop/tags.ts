@@ -14,6 +14,10 @@ export interface ParsedTags {
     title?: string;
     artist?: string;
     album?: string;
+    /** 1 based position on the album, when the tags carry one */
+    track?: number;
+    /** which disc of a set, when the tags carry one */
+    disc?: number;
     picture?: { mime: string; data: Buffer; };
     /**
      * Embedded lyrics as text. Usually plain, but tag editors habitually paste
@@ -49,6 +53,16 @@ function decodeText(encoding: number, buf: Buffer) {
         case 2: return Buffer.from(buf).swap16().toString("utf16le");
         default: return buf.toString("utf8");
     }
+}
+
+/**
+ * A track or disc number as tags actually write it: "5", "05", or "5/12" — the
+ * total after the slash is not something we have any use for. Undefined for
+ * anything that isn't a plausible position, so a junk tag can't reorder a folder.
+ */
+function parsePosition(value: string) {
+    const n = parseInt(value, 10);
+    return Number.isFinite(n) && n > 0 && n < 100000 ? n : undefined;
 }
 
 /** strips the trailing NUL(s) that ID3 text frames are padded with */
@@ -121,6 +135,12 @@ async function parseId3(path: string): Promise<ParsedTags | null> {
                 break;
             case "TALB": case "TAL":
                 tags.album ||= trimNul(decodeText(frame[0], frame.subarray(1)));
+                break;
+            case "TRCK": case "TRK":
+                tags.track ??= parsePosition(trimNul(decodeText(frame[0], frame.subarray(1))));
+                break;
+            case "TPOS": case "TPA":
+                tags.disc ??= parsePosition(trimNul(decodeText(frame[0], frame.subarray(1))));
                 break;
             case "USLT": case "ULT": {
                 if (tags.lyrics) break;
@@ -262,6 +282,9 @@ function parseVorbisComment(block: Buffer, tags: ParsedTags) {
         if (key === "TITLE") tags.title ||= value;
         else if (key === "ARTIST") tags.artist ||= value;
         else if (key === "ALBUM") tags.album ||= value;
+        // TRACKNUMBER is the standard spelling; TRACK is what several taggers write
+        else if (key === "TRACKNUMBER" || key === "TRACK") tags.track ??= parsePosition(value);
+        else if (key === "DISCNUMBER" || key === "DISC") tags.disc ??= parsePosition(value);
         // no standard key for these; every tagger picked its own
         else if (key === "LYRICS" || key === "SYNCEDLYRICS" || key === "UNSYNCEDLYRICS") tags.lyrics ||= value;
         // how Ogg and Opus carry cover art: a FLAC picture block in base64, which
@@ -388,6 +411,9 @@ const MP4_ARTIST = "\u00A9ART";
 const MP4_ALBUM_ARTIST = "aART";
 const MP4_ALBUM = "\u00A9alb";
 const MP4_LYRICS = "\u00A9lyr";
+// these two are binary rather than text: a pair of 16 bit numbers, position then total
+const MP4_TRACK = "trkn";
+const MP4_DISC = "disk";
 
 /**
  * MP4 / M4A / M4V / MOV all share the same box layout, so one parser covers the
@@ -434,6 +460,17 @@ async function parseMp4(path: string): Promise<ParsedTags | null> {
             case MP4_ALBUM_ARTIST: tags.artist ||= text(); break;
             case MP4_ALBUM: tags.album ||= text(); break;
             case MP4_LYRICS: tags.lyrics ||= text(); break;
+            case MP4_TRACK: case MP4_DISC: {
+                // two reserved bytes, then the position, then the total
+                if (value.length < 4) break;
+
+                const position = value.readUInt16BE(2);
+                if (position <= 0) break;
+
+                if (item.type === MP4_TRACK) tags.track ??= position;
+                else tags.disc ??= position;
+                break;
+            }
             case "covr":
                 if (!tags.picture) {
                     tags.picture = {
