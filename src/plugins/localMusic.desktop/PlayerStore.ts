@@ -20,6 +20,7 @@ const Native = VencordNative.pluginHelpers.LocalMusic as PluginNative<typeof imp
 const FOLDER_KEY = "LocalMusic_folder";
 const PREFS_KEY = "LocalMusic_prefs";
 const TOOLS_KEY = "LocalMusic_tools";
+const HIDDEN_KEY = "LocalMusic_hidden";
 
 export type RepeatMode = "off" | "all" | "one";
 
@@ -42,6 +43,8 @@ interface Prefs {
     volume: number;
     shuffle: boolean;
     repeat: RepeatMode;
+    /** whether a track ending rolls on into the library by itself */
+    autoplay: boolean;
     lastPath: string | null;
     videoHeight: number;
     /** pixels, or 0 to just fill the panel it is docked above */
@@ -57,6 +60,7 @@ const DEFAULT_PREFS: Prefs = {
     volume: 0.5,
     shuffle: false,
     repeat: "off",
+    autoplay: true,
     lastPath: null,
     videoHeight: 200,
     videoWidth: 0,
@@ -276,6 +280,15 @@ class PlayerStore {
     tracks: Track[] = [];
     metadata: Record<string, TrackMetadata> = {};
 
+    /**
+     * Entries the user has tucked away in the browser — folders as well as files.
+     * They stay on disk and stay in the library (playing one on purpose still
+     * works), but nothing that picks a track *for* you looks inside them.
+     */
+    private hiddenPaths = new Set<string>();
+    /** bumped on every change, so views memoised on the library re-run */
+    hiddenRevision = 0;
+
     currentIndex = -1;
     isPlaying = false;
     position = 0;
@@ -285,6 +298,7 @@ class PlayerStore {
     volume = DEFAULT_PREFS.volume;
     shuffle = DEFAULT_PREFS.shuffle;
     repeat: RepeatMode = DEFAULT_PREFS.repeat;
+    autoplay = DEFAULT_PREFS.autoplay;
 
     isScanning = false;
     videoHeight = DEFAULT_PREFS.videoHeight;
@@ -365,20 +379,24 @@ class PlayerStore {
     }
 
     async init() {
-        const [folder, prefs, tools] = await Promise.all([
+        const [folder, prefs, tools, hidden] = await Promise.all([
             DataStore.get<string>(FOLDER_KEY),
             DataStore.get<Prefs>(PREFS_KEY),
-            DataStore.get<CustomTool[]>(TOOLS_KEY)
+            DataStore.get<CustomTool[]>(TOOLS_KEY),
+            DataStore.get<string[]>(HIDDEN_KEY)
         ]);
 
         this.tools = tools ?? [];
+        this.hiddenPaths = new Set(hidden ?? []);
 
         const {
-            volume, shuffle, repeat, lastPath, videoHeight, videoWidth, floating, floatAnchor, queue
+            volume, shuffle, repeat, autoplay, lastPath, videoHeight, videoWidth, floating,
+            floatAnchor, queue
         } = { ...DEFAULT_PREFS, ...prefs };
         this.volume = volume;
         this.shuffle = shuffle;
         this.repeat = repeat;
+        this.autoplay = autoplay;
         this.videoHeight = videoHeight;
         this.videoWidth = videoWidth;
         this.floating = floating;
@@ -413,6 +431,7 @@ class PlayerStore {
             volume: this.volume,
             shuffle: this.shuffle,
             repeat: this.repeat,
+            autoplay: this.autoplay,
             lastPath: this.currentTrack?.path ?? null,
             videoHeight: this.videoHeight,
             videoWidth: this.videoWidth,
@@ -909,9 +928,62 @@ class PlayerStore {
         return this.indexByPath.get(path);
     }
 
-    /** Every playable file the library holds inside a folder, in library order. */
+    // #region hidden entries
+
+    /** Whether the user hid this exact entry — what the browser's menu asks. */
+    isHidden(path: string) {
+        return this.hiddenPaths.has(path);
+    }
+
+    /**
+     * Whether a path is out of sight: hidden itself, or sitting inside a folder
+     * that is. This is the one playback consults, so hiding a folder is enough to
+     * keep everything under it out of the way.
+     */
+    isSkipped(path: string) {
+        if (!this.hiddenPaths.size) return false;
+        if (this.hiddenPaths.has(path)) return true;
+
+        for (const hidden of this.hiddenPaths) {
+            if (isUnder(path, hidden)) return true;
+        }
+
+        return false;
+    }
+
+    /** Hides or shows entries — paths, not indexes, so folders work the same way. */
+    async setHidden(paths: string[], hidden: boolean) {
+        let changed = false;
+
+        for (const path of paths) {
+            if (this.hiddenPaths.has(path) === hidden) continue;
+
+            if (hidden) this.hiddenPaths.add(path);
+            else this.hiddenPaths.delete(path);
+            changed = true;
+        }
+
+        if (!changed) return;
+
+        this.hiddenRevision++;
+        notify();
+        await DataStore.set(HIDDEN_KEY, [...this.hiddenPaths]);
+    }
+
+    // #endregion
+
+    /**
+     * Every playable file the library holds inside a folder, in library order.
+     *
+     * Hidden entries are stepped over — unless the folder asked for is itself
+     * hidden, which is the user pointing straight at it and meaning it.
+     */
     tracksUnder(dir: string) {
-        return this.tracks.filter(track => isUnder(track.path, dir)).map(track => track.path);
+        const skipHidden = !this.isSkipped(dir);
+
+        return this.tracks
+            .filter(track => isUnder(track.path, dir) && !(skipHidden && this.isSkipped(track.path)))
+            .map(track => track.path);
     }
 
     async playPath(path: string) {
@@ -1000,6 +1072,22 @@ class PlayerStore {
 
         this.queue = this.queue.map(item => ({ ...item, path: remap(item.path) }));
 
+        // a hidden folder that was renamed or moved is still the same folder, and
+        // one that went to the recycle bin has nothing left to hide
+        if (this.hiddenPaths.size) {
+            const gone = (path: string) =>
+                result.removed.some(removed => path === removed || isUnder(path, removed));
+
+            const hidden = new Set([...this.hiddenPaths].filter(path => !gone(path)).map(remap));
+
+            if (hidden.size !== this.hiddenPaths.size
+                || [...hidden].some(path => !this.hiddenPaths.has(path))) {
+                this.hiddenPaths = hidden;
+                this.hiddenRevision++;
+                DataStore.set(HIDDEN_KEY, [...hidden]);
+            }
+        }
+
         const current = this.currentTrack?.path;
         const movedCurrent = current ? remap(current) : null;
 
@@ -1021,6 +1109,11 @@ class PlayerStore {
 
     // #endregion
 
+    /** Whether playback is allowed to land on this index on its own. */
+    private isPickable(index: number) {
+        return !this.isSkipped(this.tracks[index].path);
+    }
+
     /** Where playback would go on its own, once the queue has had its say. */
     private pickNextIndex(): number | null {
         if (!this.tracks.length) return null;
@@ -1028,14 +1121,27 @@ class PlayerStore {
         if (this.shuffle) {
             if (this.tracks.length === 1) return 0;
 
-            let next = this.currentIndex;
-            while (next === this.currentIndex) next = Math.floor(Math.random() * this.tracks.length);
-            return next;
+            const choices: number[] = [];
+            for (let index = 0; index < this.tracks.length; index++) {
+                if (index !== this.currentIndex && this.isPickable(index)) choices.push(index);
+            }
+
+            if (!choices.length) return null;
+            return choices[Math.floor(Math.random() * choices.length)];
         }
 
-        const next = this.currentIndex + 1;
-        if (next < this.tracks.length) return next;
-        return this.repeat === "all" ? 0 : null;
+        for (let next = this.currentIndex + 1; next < this.tracks.length; next++) {
+            if (this.isPickable(next)) return next;
+        }
+
+        if (this.repeat !== "all") return null;
+
+        // wrapping past the end: everything from the top back to where we are
+        for (let next = 0; next <= this.currentIndex && next < this.tracks.length; next++) {
+            if (this.isPickable(next)) return next;
+        }
+
+        return null;
     }
 
     /** @param automatic true when triggered by a track ending rather than the user */
@@ -1065,6 +1171,16 @@ class PlayerStore {
         }
 
         const queued = this.takeFromQueue();
+
+        // autoplay off means the library stops rolling on by itself. A queue the
+        // user filled is still their own doing, and so is pressing next — only a
+        // track running out with nothing lined up stops here.
+        if (queued === null && automatic && !this.autoplay) {
+            this.isPlaying = false;
+            notify();
+            return;
+        }
+
         const index = queued ?? this.pickNextIndex();
 
         if (index === null) {
@@ -1096,8 +1212,17 @@ class PlayerStore {
 
         if (!this.tracks.length) return;
 
-        const index = this.currentIndex <= 0 ? this.tracks.length - 1 : this.currentIndex - 1;
-        await this.load(index);
+        // walk back over anything hidden, wrapping round the top exactly once
+        const from = this.currentIndex <= 0 ? this.tracks.length : this.currentIndex;
+
+        for (let step = 1; step <= this.tracks.length; step++) {
+            const index = (from - step + this.tracks.length) % this.tracks.length;
+
+            if (this.isPickable(index)) {
+                await this.load(index);
+                return;
+            }
+        }
     }
 
     seek(seconds: number) {
@@ -1157,6 +1282,14 @@ class PlayerStore {
         if (this.session?.role === "listener") return;
 
         this.repeat = this.repeat === "off" ? "all" : this.repeat === "all" ? "one" : "off";
+        this.savePrefs();
+        notify();
+    }
+
+    toggleAutoplay() {
+        if (this.session?.role === "listener") return;
+
+        this.autoplay = !this.autoplay;
         this.savePrefs();
         notify();
     }

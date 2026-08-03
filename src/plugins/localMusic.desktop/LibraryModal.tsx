@@ -281,7 +281,11 @@ export function LibraryModal({ modalProps, initialTab = "library" }: {
     const filtered = useMemo(() => {
         const needle = query.trim().toLowerCase();
 
-        const withIndex = player.tracks.map((track, index) => ({ track, index }));
+        // searching is how you'd stumble back into something you hid, so it doesn't
+        // look in there either — the browser is where hidden entries live
+        const withIndex = player.tracks
+            .map((track, index) => ({ track, index }))
+            .filter(({ track }) => !store.isSkipped(track.path));
         if (!needle) return withIndex;
 
         return withIndex.filter(({ track }) => {
@@ -292,7 +296,7 @@ export function LibraryModal({ modalProps, initialTab = "library" }: {
                 || meta?.album?.toLowerCase().includes(needle);
         });
         // metadata streams in during the background scan, so it has to be a dep
-    }, [query, player.tracks, player.metadata]);
+    }, [query, player.tracks, player.metadata, player.hiddenRevision]);
 
     const visible = filtered.slice(0, MAX_ROWS);
 

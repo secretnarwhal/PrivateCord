@@ -430,6 +430,20 @@
     box-shadow: 0 0 6px color-mix(in oklab, var(--vc-lm-accent) 60%, transparent);
 }
 
+/* the line through the autoplay icon while it is off — drawn rather than swapped
+   in as a second glyph, so the icon underneath stays in exactly the same place */
+.vc-lm-button-slash {
+    position: absolute;
+    inset-inline: 4px;
+    inset-block-start: 50%;
+    height: 2px;
+    border-radius: 1px;
+    background: currentcolor;
+    box-shadow: 0 -1px 0 rgb(0 0 0 / 55%);
+    transform: translateY(-50%) rotate(-45deg);
+    pointer-events: none;
+}
+
 .vc-lm-time {
     margin-inline-start: auto;
     padding-inline: 4px;
@@ -2021,6 +2035,17 @@
 .vc-lm-row-muted {
     opacity: 0.55;
     cursor: default;
+}
+
+/* an entry the user tucked away — faint until pointed at, so the section it sits
+   in still reads as a place things were put rather than a second listing */
+.vc-lm-entry-hidden {
+    opacity: 0.5;
+}
+
+.vc-lm-entry-hidden:hover,
+.vc-lm-entry-hidden:focus-within {
+    opacity: 0.85;
 }
 
 .vc-lm-selection-bar {

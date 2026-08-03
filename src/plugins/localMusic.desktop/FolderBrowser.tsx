@@ -148,7 +148,7 @@ function NameInput({ value: initial, onCommit, onCancel }: {
     );
 }
 
-function FolderTile({ dir, art, songs, childLevel, selected, dropping, renaming, actions }: {
+function FolderTile({ dir, art, songs, childLevel, selected, dropping, renaming, hidden, actions }: {
     dir: FolderDir;
     art: string | null;
     /** playable files anywhere underneath, counted from the library scan */
@@ -158,6 +158,8 @@ function FolderTile({ dir, art, songs, childLevel, selected, dropping, renaming,
     selected: boolean;
     dropping: boolean;
     renaming: boolean;
+    /** tucked away by the user: drawn faintly, down with the other files */
+    hidden: boolean;
     actions: BrowserActions;
 }) {
     const [broken, setBroken] = useState(false);
@@ -173,7 +175,8 @@ function FolderTile({ dir, art, songs, childLevel, selected, dropping, renaming,
             className={classes(
                 cl("tile"),
                 selected && cl("tile-selected"),
-                dropping && cl("tile-drop")
+                dropping && cl("tile-drop"),
+                hidden && cl("entry-hidden")
             )}
             role="button"
             tabIndex={0}
@@ -232,11 +235,13 @@ function fileIcon(file: FolderFile) {
     return PATHS.library;
 }
 
-function FileRow({ file, playing, selected, renaming, actions }: {
+function FileRow({ file, playing, selected, renaming, hidden, actions }: {
     file: FolderFile;
     playing: boolean;
     selected: boolean;
     renaming: boolean;
+    /** tucked away by the user; unplayable files are down here anyway */
+    hidden: boolean;
     actions: BrowserActions;
 }) {
     const meta = store.metadata[file.path];
@@ -249,7 +254,8 @@ function FileRow({ file, playing, selected, renaming, actions }: {
                 cl("row"),
                 playing && cl("row-active"),
                 selected && cl("row-selected"),
-                !file.playable && cl("row-muted")
+                !file.playable && cl("row-muted"),
+                hidden && cl("entry-hidden")
             )}
             role="button"
             tabIndex={0}
@@ -399,6 +405,8 @@ export function FolderBrowser() {
     // metadata is filled in place during the background tag pass, so its identity
     // never changes — the count is what tells this memo that more has arrived
     const metaCount = Object.keys(player.metadata).length;
+    // every list below is cut by what is hidden, and hiding mutates a set in place
+    const { hiddenRevision } = player;
 
     /**
      * Songs in album order rather than file name order: a folder of tagged
@@ -406,11 +414,32 @@ export function FolderBrowser() {
      * track numbers stays in name order. Re-sorted as tags arrive.
      */
     const playable = useMemo(
-        () => files.filter(file => file.playable)
+        () => files.filter(file => file.playable && !store.isHidden(file.path))
             .sort((a, b) => compareAlbumOrder(player.metadata, a.path, b.path)),
-        [files, metaCount]
+        [files, metaCount, hiddenRevision]
     );
-    const others = useMemo(() => files.filter(file => !file.playable), [files]);
+
+    /** Folders the user hid, and folders they didn't — drawn in two places. */
+    const dirs = listing?.dirs ?? [];
+    const shownDirs = useMemo(
+        () => dirs.filter(dir => !store.isHidden(dir.path)),
+        [dirs, hiddenRevision]
+    );
+    const hiddenDirs = useMemo(
+        () => dirs.filter(dir => store.isHidden(dir.path)),
+        [dirs, hiddenRevision]
+    );
+
+    /**
+     * What the collapsed section at the bottom holds: files the player can't
+     * decode, which were never worth the room, plus everything the user tucked
+     * away by hand.
+     */
+    const others = useMemo(
+        () => files.filter(file => !file.playable || store.isHidden(file.path)),
+        [files, hiddenRevision]
+    );
+    const tucked = hiddenDirs.length + others.length;
 
     /**
      * What the library knows about the folders on screen: how many songs each one
@@ -436,12 +465,16 @@ export function FolderBrowser() {
             const dir = track.path.slice(0, base + cut);
             if (!known.has(dir)) continue;
 
+            // hidden tracks are not part of what a folder holds — unless the folder
+            // on screen is the hidden one, which then still says what is really in it
+            if (store.isSkipped(track.path) && !store.isHidden(dir)) continue;
+
             songs.set(dir, (songs.get(dir) ?? 0) + 1);
             if (!art.has(dir) && player.metadata[track.path]?.hasArt) art.set(dir, track.path);
         }
 
         return { songs, art };
-    }, [listing, player.tracks, metaCount]);
+    }, [listing, player.tracks, metaCount, hiddenRevision]);
 
     const dirArt = (dir: FolderDir) => {
         if (dir.cover) return store.imageUrl(dir.cover);
@@ -454,18 +487,19 @@ export function FolderBrowser() {
     const order = useMemo(
         () => listing
             ? [
-                ...listing.dirs.map(dir => dir.path),
+                ...shownDirs.map(dir => dir.path),
                 ...playable.map(file => file.path),
+                ...hiddenDirs.map(dir => dir.path),
                 ...others.map(file => file.path)
             ]
             : [],
-        [listing, playable, others]
+        [listing, shownDirs, playable, hiddenDirs, others]
     );
 
     /** Everything playable in this folder and below it — what "play all" plays. */
     const folderTracks = useMemo(
         () => listing ? store.tracksUnder(listing.path) : [],
-        [listing, player.tracks]
+        [listing, player.tracks, hiddenRevision]
     );
 
     function navigate(next: string) {
@@ -573,6 +607,18 @@ export function FolderBrowser() {
         });
     }
 
+    /**
+     * Tucks entries into the collapsed section at the bottom, or brings them back
+     * out of it. Nothing moves on disk: a hidden folder is still there and still
+     * in the library, it just stops taking up room here and stops being somewhere
+     * playback wanders into on its own.
+     */
+    function hide(targets: string[], hidden: boolean) {
+        void store.setHidden(targets, hidden);
+        // the selection is about to be somewhere else on screen, or nowhere at all
+        setSelected([]);
+    }
+
     function openMenu(e: React.MouseEvent, target: string, isDir: boolean) {
         e.preventDefault();
         e.stopPropagation();
@@ -583,6 +629,8 @@ export function FolderBrowser() {
         const targets = targetsFor(target);
         const many = targets.length > 1;
         const parent = listing?.parent;
+        // a mixed selection hides: one more click then puts the lot back
+        const allHidden = targets.every(path => store.isHidden(path));
 
         ContextMenuApi.openContextMenu(e, () => (
             <Menu.Menu
@@ -632,6 +680,14 @@ export function FolderBrowser() {
                     label="File by artist / album"
                     icon={menuIcon(PATHS.folderMove)}
                     action={() => tidy(tracksOf(targets))}
+                />
+                <Menu.MenuItem
+                    id="vc-lm-hide"
+                    label={allHidden
+                        ? many ? `Show ${plural(targets.length, "item")} again` : "Show again"
+                        : many ? `Hide ${plural(targets.length, "item")}` : "Hide"}
+                    icon={menuIcon(allHidden ? PATHS.show : PATHS.hide)}
+                    action={() => hide(targets, !allHidden)}
                 />
                 {!many && (
                     <Menu.MenuItem
@@ -803,15 +859,15 @@ export function FolderBrowser() {
                     </div>
                 )}
 
-                {(!!listing?.dirs.length || creating) && (
+                {(!!shownDirs.length || creating) && (
                     <div className={cl("section")}>
-                        {creating && !listing?.dirs.length
+                        {creating && !shownDirs.length
                             ? `New ${childLevel.toLowerCase()}`
-                            : plural(listing?.dirs.length ?? 0, childLevel.toLowerCase())}
+                            : plural(shownDirs.length, childLevel.toLowerCase())}
                     </div>
                 )}
 
-                {(!!listing?.dirs.length || creating) && (
+                {(!!shownDirs.length || creating) && (
                     <div className={cl("tiles")}>
                         {creating && (
                             <div className={classes(cl("tile"), cl("tile-new"))}>
@@ -831,7 +887,7 @@ export function FolderBrowser() {
                             </div>
                         )}
 
-                        {listing?.dirs.map(dir => (
+                        {shownDirs.map(dir => (
                             <FolderTile
                                 key={dir.path}
                                 dir={dir}
@@ -841,6 +897,7 @@ export function FolderBrowser() {
                                 selected={selected.includes(dir.path)}
                                 dropping={dropTarget === dir.path}
                                 renaming={renaming === dir.path}
+                                hidden={false}
                                 actions={actions}
                             />
                         ))}
@@ -865,23 +922,46 @@ export function FolderBrowser() {
                         playing={player.currentTrack?.path === file.path}
                         selected={selected.includes(file.path)}
                         renaming={renaming === file.path}
+                        hidden={false}
                         actions={actions}
                     />
                 ))}
 
-                {!!others.length && (
+                {/* folders are only ever down here because they were hidden, so the
+                    section says "item" as soon as one of them is */}
+                {tucked > 0 && (
                     <button className={cl("section-toggle")} onClick={() => setShowOther(current => !current)}>
-                        {showOther ? "Hide" : "Show"} {plural(others.length, "other file")}
+                        {showOther ? "Hide" : "Show"} {plural(tucked, hiddenDirs.length ? "other item" : "other file")}
                     </button>
+                )}
+
+                {showOther && !!hiddenDirs.length && (
+                    <div className={cl("tiles")}>
+                        {hiddenDirs.map(dir => (
+                            <FolderTile
+                                key={dir.path}
+                                dir={dir}
+                                art={dirArt(dir)}
+                                songs={stats.songs.get(dir.path) ?? dir.trackCount}
+                                childLevel={levelName(depth + 1)}
+                                selected={selected.includes(dir.path)}
+                                dropping={dropTarget === dir.path}
+                                renaming={renaming === dir.path}
+                                hidden
+                                actions={actions}
+                            />
+                        ))}
+                    </div>
                 )}
 
                 {showOther && others.map(file => (
                     <FileRow
                         key={file.path}
                         file={file}
-                        playing={false}
+                        playing={player.currentTrack?.path === file.path}
                         selected={selected.includes(file.path)}
                         renaming={renaming === file.path}
+                        hidden={store.isHidden(file.path)}
                         actions={actions}
                     />
                 ))}
@@ -908,6 +988,13 @@ export function FolderBrowser() {
                     )}
                     <Button size="small" variant="secondary" onClick={() => tidy(tracksOf(selected))}>
                         File by tag
+                    </Button>
+                    <Button
+                        size="small"
+                        variant="secondary"
+                        onClick={() => hide(selected, !selected.every(path => store.isHidden(path)))}
+                    >
+                        {selected.every(path => store.isHidden(path)) ? "Show" : "Hide"}
                     </Button>
                     <Button size="small" variant="dangerSecondary" onClick={() => confirmDelete(selected)}>
                         Delete

@@ -38,7 +38,7 @@ result thumbnails.
 │      video, or             │
 │   ▂▄▆█▆▄▂ visualizer ▂▄▆█▆ │
 │ ▬▬▬▬▬▬▬▬●▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬ │  <- seek bar, click or drag
-│ 🔀 ⏮ ⏯ ⏭ 🔁   1:23/4:56 🔊 │  <- transport
+│ 🔀 ⏮ ⏯ ⏭ 🔁 🅐 1:23/4:56 🔊 │  <- transport (shuffle/repeat/autoplay)
 ├────────────────────────────┤
 │ 🔊 Voice Connected          │  <- untouched
 │ username                    │  <- untouched
@@ -51,6 +51,14 @@ sidebar to float over the client, ⧉ opens the library modal — folder picker,
 search, the folder browser, and **Download…** — and ☰ opens the same
 modal on the queue, with a badge showing how many tracks are waiting. Shuffle and
 repeat sit right in the transport row (repeat cycles off → all → one).
+
+🅐 is **autoplay**, sitting at the end of the transport buttons. On — which is how
+it starts — a track running out rolls on into the next one, the way it always did.
+Struck through, playback stops instead of wandering off into the rest of the
+library on its own. What you queued yourself still plays: autoplay only governs
+what happens once there is nothing left waiting, so *Play next* / *Add to queue*
+mean the same thing either way, and so does pressing ⏭ yourself. The setting is
+saved with the rest of the player's prefs.
 
 Volume works like YouTube's: the 🔊 icon mutes on click, and hovering it pops up
 a small vertical slider to drag (the scroll wheel over it nudges the volume too).
@@ -80,7 +88,7 @@ say and what **File by artist / album** means.
 │ 23 SONGS                                     │
 │ ♪ Music Is Math — Boards of Canada    ⏭ ＋    │
 │ ♪ Beware the Friendly Stranger        ⏭ ＋    │
-│ Show 3 other files                           │
+│ Show 3 other items                           │  <- what you hid, plus the junk
 └──────────────────────────────────────────────┘
 ```
 
@@ -95,7 +103,7 @@ say and what **File by artist / album** means.
   itself is re-sorted the same way once the background tag pass has been over it,
   which is what makes ⏭ walk an album in order rather than alphabetically.
 - **Selecting** — ctrl-click picks several, shift-click picks a range. A bar
-  appears with Play, Queue, Move up, File by tag and Delete for the lot.
+  appears with Play, Queue, Move up, File by tag, Hide and Delete for the lot.
 - **Moving** — drag any tile or row onto a folder tile, onto a breadcrumb, or
   onto ↑. The drop target lights up, and a drag that started on a selection
   carries the whole selection.
@@ -110,6 +118,20 @@ say and what **File by artist / album** means.
   folder, falling back to the embedded art of a track inside it.
 - **Other files** — anything the player can't decode is listed behind *Show N
   other files*: still yours to rename, move or delete, just not to play.
+- **Hiding** — right click → *Hide* puts a folder or a file down in that same
+  collapsed section, and *Show again* brings it back. Nothing moves on disk and
+  nothing leaves the library; what goes away is the room it took up and the
+  chance of stumbling into it. A hidden folder takes everything under it along.
+
+  Hidden entries are stepped over by everything that picks a track *for* you:
+  autoplay, shuffle, ⏭ and ⏮, ▶ on the folder above them, and the flat search
+  list. They are not stepped over when you point straight at them — playing a
+  hidden folder from its own tile or right-click menu plays exactly what is in
+  it. Folder song counts leave them out for the same reason.
+
+  What is hidden is remembered per path, and follows an entry that is renamed or
+  moved; deleting one forgets it. A `__pycache__` next to your music, a folder of
+  stems, that one album you never want shuffled into — this is for those.
 - **Searching** switches back to the flat list of the whole library, because a
   search that only looked in the folder you happen to be standing in would be the
   least useful kind.
@@ -143,7 +165,7 @@ The queue outranks both the library order and shuffle: whenever a track ends,
 whatever is at the front of the queue plays next and is consumed. The one
 exception is repeat-one, which means "do not move on" and keeps the queue intact
 until it is switched off. When the queue runs dry, playback falls back to
-shuffle / the library order as before.
+shuffle / the library order as before — or stops there, if autoplay is off.
 
 The queue is saved with the rest of the player's prefs, so it survives a restart.
 Entries whose file has since disappeared are dropped on the next rescan.
