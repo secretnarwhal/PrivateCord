@@ -1,8 +1,18 @@
-aes-256-gcm encryption on private messages.
-
-mass messages deleter (https://github.com/victornpb/undiscord) ported into plugins.
-
-new toggle button for translations.
+# Feats
+- Encrypt your messages with AES-256-GCM encryption
+- Private IRC Group Chat
+- Ghost Messages
+- Spoof Messages
+- Invisible Messages (+ optional encryption)
+- Mass Deleter
+- Gif Folders
+- Chatbar Buttons Tray
+- Base Converter Decoder
+- Default Ven Auto-Translate Improved
+- AI chat panel (points to local gateway)
+- Local Music Player with built-in yt-dlp support for downloading whole playlists
+- Optional support for custom music downloader (like a cracked version of Spoti-Flac by RiverCodes, for example)
++ Everything default Ven offers
 
 
 
