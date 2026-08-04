@@ -1,0 +1,533 @@
+/* Kaomoji keyboard — same dark-glass language as the LocalMusic player:
+   translucent white fills, inset hairline rings, soft radii, one accent. */
+
+.vc-kmj-anchor {
+    display: flex;
+    align-items: center;
+}
+
+/* The button reads as "on" while its keyboard is open, like Discord's own pickers.
+   Aimed at the icon rather than the wrapper because Discord's own button class sits
+   in between and would win the colour otherwise. */
+.vc-kmj-anchor-open .vc-kmj-icon {
+    color: var(--interactive-active);
+}
+
+.vc-kmj-picker {
+    --vc-kmj-accent: var(--brand-500, #5865f2);
+
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    width: 412px;
+    height: 452px;
+    padding: 12px 12px 0;
+    border-radius: 16px;
+    overflow: hidden;
+    background: linear-gradient(160deg, #1a1a23, #101016);
+    box-shadow:
+        0 18px 48px rgb(0 0 0 / 45%),
+        inset 0 0 0 1px rgb(255 255 255 / 8%);
+    color: var(--text-default);
+    font-family: var(--font-primary), "Segoe UI Emoji", "Segoe UI Symbol", Meiryo, sans-serif;
+}
+
+.vc-kmj-crash {
+    padding: 12px 16px;
+    border-radius: 12px;
+    background: #16161d;
+    box-shadow: inset 0 0 0 1px rgb(255 255 255 / 8%);
+    font-size: 13px;
+    color: var(--text-danger);
+}
+
+/* #region search */
+
+.vc-kmj-search {
+    position: relative;
+    display: flex;
+    align-items: center;
+    flex: 0 0 auto;
+}
+
+.vc-kmj-search-icon {
+    position: absolute;
+    inset-inline-start: 11px;
+    color: rgb(255 255 255 / 35%);
+    pointer-events: none;
+}
+
+.vc-kmj-search-input {
+    width: 100%;
+    padding: 9px 34px;
+    border: none;
+    border-radius: 10px;
+    background: rgb(255 255 255 / 5%);
+    box-shadow: inset 0 0 0 1px rgb(255 255 255 / 8%);
+    color: #e6e6ec;
+    font-size: 13px;
+    font-family: inherit;
+    outline: none;
+    transition: box-shadow 0.15s ease, background-color 0.15s ease;
+}
+
+.vc-kmj-search-input:focus {
+    background: rgb(255 255 255 / 7%);
+    box-shadow:
+        inset 0 0 0 1px color-mix(in oklab, var(--vc-kmj-accent) 70%, transparent),
+        0 0 0 3px color-mix(in oklab, var(--vc-kmj-accent) 18%, transparent);
+}
+
+.vc-kmj-search-input::placeholder {
+    color: rgb(255 255 255 / 32%);
+}
+
+.vc-kmj-search-clear {
+    position: absolute;
+    inset-inline-end: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    border: none;
+    border-radius: 6px;
+    background: rgb(255 255 255 / 8%);
+    color: rgb(255 255 255 / 55%);
+    cursor: pointer;
+    transition: background-color 0.12s ease, color 0.12s ease;
+}
+
+.vc-kmj-search-clear:hover {
+    background: rgb(255 255 255 / 14%);
+    color: #fff;
+}
+
+/* #endregion */
+
+/* #region category pills */
+
+.vc-kmj-cats {
+    display: flex;
+    gap: 4px;
+    flex: 0 0 auto;
+    margin-block-start: 10px;
+    padding: 3px;
+    border-radius: 12px;
+    background: rgb(255 255 255 / 4%);
+    box-shadow: inset 0 0 0 1px rgb(255 255 255 / 6%);
+    overflow-x: auto;
+    scrollbar-width: none;
+}
+
+.vc-kmj-cats::-webkit-scrollbar {
+    display: none;
+}
+
+.vc-kmj-cat {
+    flex: 0 0 auto;
+    padding: 5px 11px;
+    border: none;
+    border-radius: 9px;
+    background: none;
+    color: var(--text-muted);
+    font-size: 12px;
+    font-weight: 600;
+    font-family: inherit;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: color 0.15s ease, background-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.vc-kmj-cat:hover {
+    color: var(--text-default);
+    background: rgb(255 255 255 / 5%);
+}
+
+.vc-kmj-cat-active,
+.vc-kmj-cat-active:hover {
+    color: #fff;
+    background: color-mix(in oklab, var(--vc-kmj-accent) 22%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--vc-kmj-accent) 35%, transparent);
+}
+
+/* #endregion */
+
+/* #region the grid */
+
+.vc-kmj-body {
+    position: relative;
+    flex: 1 1 auto;
+    min-height: 0;
+    margin-block-start: 10px;
+    padding-inline-end: 4px;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: rgb(255 255 255 / 15%) transparent;
+}
+
+.vc-kmj-body::-webkit-scrollbar {
+    width: 8px;
+}
+
+.vc-kmj-body::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.vc-kmj-body::-webkit-scrollbar-thumb {
+    background: rgb(255 255 255 / 12%);
+    border-radius: 4px;
+}
+
+.vc-kmj-body::-webkit-scrollbar-thumb:hover {
+    background: rgb(255 255 255 / 20%);
+}
+
+.vc-kmj-section + .vc-kmj-section {
+    margin-block-start: 14px;
+}
+
+/* sticks so you always know which category you've scrolled into */
+.vc-kmj-section-head {
+    position: sticky;
+    inset-block-start: 0;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 2px 6px;
+    background: linear-gradient(to bottom, #15151d 65%, rgb(21 21 29 / 0%));
+}
+
+.vc-kmj-section-title {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+}
+
+.vc-kmj-section-count {
+    padding: 0 5px;
+    border-radius: 999px;
+    background: rgb(255 255 255 / 7%);
+    color: rgb(255 255 255 / 45%);
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 15px;
+    font-variant-numeric: tabular-nums;
+}
+
+.vc-kmj-section-action {
+    margin-inline-start: auto;
+    padding: 2px 8px;
+    border: none;
+    border-radius: 7px;
+    background: rgb(255 255 255 / 6%);
+    color: var(--text-muted);
+    font-size: 11px;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    transition: background-color 0.12s ease, color 0.12s ease;
+}
+
+.vc-kmj-section-action:hover {
+    background: rgb(255 255 255 / 12%);
+    color: #fff;
+}
+
+/* Kaomoji are wildly different widths, so they're content-sized chips rather than a
+   fixed grid — a grid either clips the long ones or wastes a screen on the short ones. */
+.vc-kmj-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+}
+
+.vc-kmj-tile {
+    position: relative;
+    display: flex;
+    flex: 0 0 auto;
+    max-width: 100%;
+}
+
+.vc-kmj-tile-face {
+    max-width: 100%;
+    padding: 8px 10px;
+    border: none;
+    border-radius: 10px;
+    background: rgb(255 255 255 / 4%);
+    box-shadow: inset 0 0 0 1px rgb(255 255 255 / 5%);
+    color: #dcdce4;
+    font-size: 14px;
+    line-height: 20px;
+    font-family: inherit;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    cursor: pointer;
+    transition: background-color 0.12s ease, color 0.12s ease, transform 0.12s ease, box-shadow 0.12s ease;
+}
+
+.vc-kmj-tile-face:hover {
+    background: color-mix(in oklab, var(--vc-kmj-accent) 20%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--vc-kmj-accent) 38%, transparent);
+    color: #fff;
+}
+
+.vc-kmj-tile-face:active {
+    transform: scale(0.94);
+}
+
+/* Only on your own kaomoji, and only while you're pointing at one — a row of delete
+   buttons would drown out the faces themselves. */
+.vc-kmj-tile-remove {
+    position: absolute;
+    inset-block-start: -4px;
+    inset-inline-end: -4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 17px;
+    height: 17px;
+    padding: 0;
+    border: none;
+    border-radius: 999px;
+    background: var(--status-danger, #da373c);
+    color: #fff;
+    cursor: pointer;
+    opacity: 0;
+    transform: scale(0.7);
+    transition: opacity 0.12s ease, transform 0.12s ease;
+}
+
+.vc-kmj-tile-custom:hover .vc-kmj-tile-remove,
+.vc-kmj-tile-custom:focus-within .vc-kmj-tile-remove {
+    opacity: 1;
+    transform: scale(1);
+}
+
+.vc-kmj-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    padding: 56px 24px;
+    text-align: center;
+    font-size: 13px;
+    color: var(--text-muted);
+}
+
+.vc-kmj-empty-face {
+    font-size: 26px;
+    color: rgb(255 255 255 / 30%);
+}
+
+.vc-kmj-empty-hint {
+    font-size: 12px;
+    color: rgb(255 255 255 / 35%);
+}
+
+/* #endregion */
+
+/* #region footer */
+
+.vc-kmj-footer {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex: 0 0 auto;
+    margin-inline: -12px;
+    padding: 10px 12px;
+    border-block-start: 1px solid rgb(255 255 255 / 6%);
+    background: rgb(0 0 0 / 20%);
+}
+
+.vc-kmj-add {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 13px;
+    border: none;
+    border-radius: 9px;
+    background: var(--vc-kmj-accent);
+    color: #fff;
+    font-size: 13px;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    box-shadow: 0 3px 12px color-mix(in oklab, var(--vc-kmj-accent) 45%, transparent);
+    transition: filter 0.12s ease, transform 0.12s ease;
+}
+
+.vc-kmj-add:hover {
+    filter: brightness(1.12);
+}
+
+.vc-kmj-add:active {
+    transform: scale(0.96);
+}
+
+.vc-kmj-footer-hint {
+    margin-inline-start: auto;
+    font-size: 11px;
+    color: rgb(255 255 255 / 32%);
+}
+
+/* #endregion */
+
+/* #region paste overlay */
+
+.vc-kmj-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 5;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    background: rgb(10 10 14 / 66%);
+    backdrop-filter: blur(6px) saturate(120%);
+    animation: vc-kmj-fade 0.14s ease;
+}
+
+@keyframes vc-kmj-fade {
+    from {
+        opacity: 0;
+    }
+}
+
+/* the paste catcher: focused, invisible, and deliberately not zero-sized so the
+   browser still treats it as a live text field */
+.vc-kmj-catcher {
+    position: absolute;
+    inset-block-start: 50%;
+    inset-inline-start: 50%;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    border: none;
+    background: none;
+    color: transparent;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.vc-kmj-overlay-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    max-width: 100%;
+    padding: 22px 24px;
+    border-radius: 16px;
+    background:
+        radial-gradient(120% 140% at 50% -20%, color-mix(in oklab, var(--vc-kmj-accent) 22%, transparent), transparent 65%),
+        linear-gradient(160deg, #1c1c26, #131319);
+    box-shadow:
+        0 16px 40px rgb(0 0 0 / 45%),
+        inset 0 0 0 1px rgb(255 255 255 / 9%);
+    text-align: center;
+}
+
+.vc-kmj-overlay-badge {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 54px;
+    height: 54px;
+    border-radius: 16px;
+    background: color-mix(in oklab, var(--vc-kmj-accent) 20%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--vc-kmj-accent) 40%, transparent);
+    color: color-mix(in oklab, var(--vc-kmj-accent) 30%, #fff);
+}
+
+.vc-kmj-overlay-cue {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+}
+
+.vc-kmj-key {
+    padding: 4px 10px;
+    border-radius: 8px;
+    background: rgb(255 255 255 / 9%);
+    box-shadow:
+        inset 0 0 0 1px rgb(255 255 255 / 14%),
+        0 2px 0 rgb(0 0 0 / 35%);
+    color: #fff;
+    font-size: 15px;
+    font-weight: 700;
+    font-family: inherit;
+    line-height: 20px;
+}
+
+.vc-kmj-overlay-plus {
+    color: rgb(255 255 255 / 50%);
+    font-size: 15px;
+    font-weight: 700;
+}
+
+.vc-kmj-overlay-sub {
+    max-width: 260px;
+    font-size: 12px;
+    line-height: 17px;
+    color: rgb(255 255 255 / 45%);
+}
+
+.vc-kmj-overlay-error {
+    padding: 4px 10px;
+    border-radius: 8px;
+    background: color-mix(in oklab, var(--status-danger, #da373c) 18%, transparent);
+    color: color-mix(in oklab, var(--status-danger, #da373c) 30%, #fff);
+    font-size: 12px;
+}
+
+.vc-kmj-overlay-added {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 4px;
+    max-width: 300px;
+}
+
+.vc-kmj-overlay-chip {
+    padding: 4px 8px;
+    border-radius: 8px;
+    background: color-mix(in oklab, var(--vc-kmj-accent) 22%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--vc-kmj-accent) 36%, transparent);
+    color: #fff;
+    font-size: 13px;
+    white-space: nowrap;
+    animation: vc-kmj-pop 0.18s ease;
+}
+
+@keyframes vc-kmj-pop {
+    from {
+        opacity: 0;
+        transform: scale(0.8);
+    }
+}
+
+.vc-kmj-overlay-done {
+    margin-block-start: 2px;
+    padding: 6px 16px;
+    border: none;
+    border-radius: 9px;
+    background: rgb(255 255 255 / 8%);
+    box-shadow: inset 0 0 0 1px rgb(255 255 255 / 10%);
+    color: #fff;
+    font-size: 12px;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    transition: background-color 0.12s ease;
+}
+
+.vc-kmj-overlay-done:hover {
+    background: rgb(255 255 255 / 14%);
+}
+
+/* #endregion */
