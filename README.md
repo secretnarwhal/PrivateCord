@@ -14,6 +14,9 @@
 - Optional support for custom music downloader (like a cracked version of Spoti-Flac by RiverCodes, for example)
 + Everything default Ven offers
 
+# Pre-requisites
+
+You need `pnpm` to build the files.
 
 
 # Installation:
