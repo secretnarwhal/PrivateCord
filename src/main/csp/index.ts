@@ -78,6 +78,26 @@ const findHeader = (headers: PolicyMap, headerName: Lowercase<string>) => {
     return Object.keys(headers).find(h => h.toLowerCase() === headerName);
 };
 
+const isLoopbackHost = (host: string) => /^(localhost|127\.0\.0\.1|\[::1\])(:|$)/.test(host);
+
+/**
+ * Chromium does not match a schemeless host-source against a `ws://` or `wss://`
+ * URL, even when the page itself is https — Discord's own policy spells out
+ * `wss://*.discord.gg` and friends explicitly for this reason. Anything that
+ * opens a WebSocket therefore stays blocked despite its host being allowed.
+ *
+ * The host-permission flow can't express this on its own: addCspRule stores
+ * `new URL(url).host`, which drops the scheme. So synthesise the scheme-qualified
+ * form here for connect-src entries.
+ *
+ * Only loopback gets widened to insecure `ws://` — there is no transport to
+ * protect there, and it's what local development servers actually speak.
+ */
+const websocketVariants = (host: string): string[] => {
+    if (host.includes("://")) return [];
+    return isLoopbackHost(host) ? [`ws://${host}`, `wss://${host}`] : [`wss://${host}`];
+};
+
 const parsePolicy = (policy: string): PolicyMap => {
     const result: PolicyMap = {};
     policy.split(";").forEach(directive => {
@@ -122,17 +142,19 @@ const patchCsp = (headers: PolicyMap) => {
             pushDirective(directive, "blob:", "data:", "vencord:", "vesktop:");
         }
 
-        for (const [host, directives] of Object.entries(NativeSettings.store.customCspRules)) {
-            for (const directive of directives) {
-                pushDirective(directive, host);
+        const applyRules = (rules: PolicyMap) => {
+            for (const [host, directives] of Object.entries(rules)) {
+                for (const directive of directives) {
+                    pushDirective(directive, host);
+                    if (directive === "connect-src") {
+                        pushDirective(directive, ...websocketVariants(host));
+                    }
+                }
             }
-        }
+        };
 
-        for (const [host, directives] of Object.entries(CspPolicies)) {
-            for (const directive of directives) {
-                pushDirective(directive, host);
-            }
-        }
+        applyRules(NativeSettings.store.customCspRules);
+        applyRules(CspPolicies);
 
         headers[header] = [stringifyPolicy(csp)];
     }

@@ -1,0 +1,414 @@
+/* IrcChat — styling scoped to vc-irc- prefixed classes. */
+
+.vc-irc-btn {
+    color: var(--interactive-normal);
+}
+
+.vc-irc-btn:hover {
+    color: var(--interactive-hover);
+}
+
+.vc-irc-icon {
+    display: block;
+}
+
+.vc-irc-btn-wrap {
+    position: relative;
+    display: inline-flex;
+}
+
+.vc-irc-unread-dot {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    width: 8px;
+    height: 8px;
+    background: var(--status-danger, #f23f42);
+    border: 2px solid var(--background-secondary, #2b2d31);
+    border-radius: 50%;
+    pointer-events: none;
+}
+
+/* ── Backdrop ────────────────────────────────────────────────────── */
+
+/* Portaled onto document.body, which sits OUTSIDE #app-mount's .theme-dark
+   scope. Discord's CSS variables are only defined under .theme-dark /
+   .theme-light, so portaled elements can't resolve them and text falls back to
+   black on black. Hardcode the dark-theme values here so every child inherits
+   something usable. */
+.vc-irc-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgb(0 0 0 / 60%);
+
+    --text-normal: #dbdee1;
+    --text-muted: #949ba4;
+    --text-link: #00a8fc;
+    --header-secondary: #b5bac1;
+    --interactive-normal: #b5bac1;
+    --interactive-hover: #dbdee1;
+    --background-primary: #313338;
+    --background-secondary: #2b2d31;
+    --background-secondary-alt: #232428;
+    --background-tertiary: #1e1f22;
+    --background-modifier-hover: rgb(79 84 92 / 16%);
+    --background-modifier-accent: hsl(228deg 6% 33% / 48%);
+    --brand-500: #5865f2;
+    --green-360: #3ba55d;
+    --status-danger: #f23f42;
+    --yellow-300: #f0b132;
+
+    color: var(--text-normal, #dbdee1);
+    font-family: "gg sans", "Noto Sans", "Helvetica Neue", helvetica, arial, sans-serif;
+}
+
+/* ── Panel shell ─────────────────────────────────────────────────── */
+
+.vc-irc-panel {
+    display: flex;
+    flex-direction: column;
+    width: 90vw;
+    max-width: 1100px;
+    height: 85vh;
+    max-height: 860px;
+    overflow: hidden;
+    background: var(--background-primary, #313338);
+    border-radius: 12px;
+    box-shadow: 0 8px 40px rgb(0 0 0 / 50%);
+}
+
+.vc-irc-header {
+    display: flex;
+    flex: 0 0 auto;
+    gap: 12px;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    background: var(--background-secondary, #2b2d31);
+    border-bottom: 1px solid var(--background-tertiary, #1e1f22);
+}
+
+.vc-irc-header-main {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    min-width: 0;
+}
+
+.vc-irc-header-channel {
+    overflow: hidden;
+    font-size: 16px;
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.vc-irc-header-status {
+    font-size: 12px;
+    color: var(--text-muted, #949ba4);
+    white-space: nowrap;
+}
+
+.vc-irc-header-actions {
+    display: flex;
+    flex: 0 0 auto;
+    gap: 8px;
+    align-items: center;
+}
+
+.vc-irc-status-dot {
+    flex: 0 0 auto;
+    width: 10px;
+    height: 10px;
+    background: var(--text-muted, #949ba4);
+    border-radius: 50%;
+}
+
+.vc-irc-status-connected {
+    background: var(--green-360, #3ba55d);
+}
+
+.vc-irc-status-connecting,
+.vc-irc-status-registering,
+.vc-irc-status-reconnecting {
+    background: var(--yellow-300, #f0b132);
+    animation: vc-irc-pulse 1.4s ease-in-out infinite;
+}
+
+.vc-irc-status-disconnected {
+    background: var(--status-danger, #f23f42);
+}
+
+@keyframes vc-irc-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.35; }
+}
+
+.vc-irc-close {
+    padding: 0 6px;
+    font-size: 22px;
+    line-height: 1;
+    color: var(--interactive-normal, #b5bac1);
+    cursor: pointer;
+    background: none;
+    border: none;
+}
+
+.vc-irc-close:hover {
+    color: var(--interactive-hover, #dbdee1);
+}
+
+.vc-irc-topic {
+    flex: 0 0 auto;
+    padding: 8px 16px;
+    overflow: hidden;
+    font-size: 13px;
+    color: var(--text-muted, #949ba4);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    background: var(--background-secondary-alt, #232428);
+}
+
+/* ── Body: message list + member list ────────────────────────────── */
+
+.vc-irc-body {
+    display: flex;
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
+.vc-irc-messages {
+    flex: 1 1 auto;
+    padding: 12px 8px 12px 16px;
+    overflow: hidden auto;
+    font-size: 14px;
+    line-height: 1.45;
+}
+
+.vc-irc-messages-empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.vc-irc-empty {
+    text-align: center;
+    opacity: 0.7;
+}
+
+.vc-irc-empty-icon {
+    font-size: 40px;
+    font-weight: 700;
+    color: var(--text-muted, #949ba4);
+}
+
+.vc-irc-empty-heading {
+    margin-top: 8px;
+    font-size: 16px;
+    font-weight: 600;
+}
+
+.vc-irc-empty-sub {
+    margin-top: 4px;
+    font-size: 13px;
+    color: var(--text-muted, #949ba4);
+}
+
+/* ── Entries ─────────────────────────────────────────────────────── */
+
+.vc-irc-entry {
+    display: flex;
+    gap: 8px;
+    align-items: baseline;
+    padding: 1px 6px;
+    border-radius: 4px;
+}
+
+.vc-irc-entry:hover {
+    background: var(--background-modifier-hover, rgb(79 84 92 / 16%));
+}
+
+.vc-irc-time {
+    flex: 0 0 auto;
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-muted, #949ba4);
+    opacity: 0.75;
+}
+
+.vc-irc-nick {
+    flex: 0 0 auto;
+    max-width: 160px;
+    overflow: hidden;
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Long unbroken strings (URLs, pasted blobs) must not widen the panel. */
+.vc-irc-text,
+.vc-irc-action-text,
+.vc-irc-system-text,
+.vc-irc-presence-text {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.vc-irc-entry-mention {
+    background: rgb(240 177 50 / 10%);
+    box-shadow: inset 2px 0 0 var(--yellow-300, #f0b132);
+}
+
+.vc-irc-entry-notice .vc-irc-text {
+    color: var(--text-muted, #949ba4);
+}
+
+.vc-irc-entry-private {
+    background: rgb(88 101 242 / 10%);
+    box-shadow: inset 2px 0 0 var(--brand-500, #5865f2);
+}
+
+.vc-irc-entry-action .vc-irc-action-text {
+    font-style: italic;
+}
+
+.vc-irc-entry-system .vc-irc-system-text,
+.vc-irc-entry-presence .vc-irc-presence-text {
+    font-size: 13px;
+    color: var(--text-muted, #949ba4);
+}
+
+.vc-irc-entry-error .vc-irc-system-text {
+    color: var(--status-danger, #f23f42);
+}
+
+.vc-irc-presence-marker {
+    font-weight: 700;
+    color: var(--text-muted, #949ba4);
+}
+
+.vc-irc-link {
+    color: var(--text-link, #00a8fc);
+    text-decoration: none;
+}
+
+.vc-irc-link:hover {
+    text-decoration: underline;
+}
+
+/* ── Member list ─────────────────────────────────────────────────── */
+
+.vc-irc-members {
+    display: flex;
+    flex: 0 0 200px;
+    flex-direction: column;
+    min-height: 0;
+    background: var(--background-secondary, #2b2d31);
+    border-left: 1px solid var(--background-tertiary, #1e1f22);
+}
+
+.vc-irc-members-header {
+    flex: 0 0 auto;
+    padding: 12px 12px 6px;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--header-secondary, #b5bac1);
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+}
+
+.vc-irc-members-list {
+    flex: 1 1 auto;
+    padding: 0 6px 12px;
+    overflow-y: auto;
+}
+
+.vc-irc-member {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+    padding: 3px 6px;
+    font-size: 14px;
+    border-radius: 4px;
+}
+
+.vc-irc-member:hover {
+    background: var(--background-modifier-hover, rgb(79 84 92 / 16%));
+}
+
+.vc-irc-member-prefix {
+    flex: 0 0 10px;
+    font-weight: 700;
+    color: var(--text-muted, #949ba4);
+}
+
+.vc-irc-member-nick {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.vc-irc-member-self .vc-irc-member-nick {
+    text-decoration: underline;
+    text-decoration-style: dotted;
+    text-underline-offset: 3px;
+}
+
+/* ── Composer ────────────────────────────────────────────────────── */
+
+.vc-irc-composer {
+    display: flex;
+    flex: 0 0 auto;
+    gap: 8px;
+    align-items: flex-end;
+    padding: 12px 16px;
+    background: var(--background-secondary, #2b2d31);
+    border-top: 1px solid var(--background-tertiary, #1e1f22);
+}
+
+.vc-irc-composer-input {
+    flex: 1 1 auto;
+    max-height: 140px;
+    padding: 10px 12px;
+    font-family: inherit;
+    font-size: 14px;
+    line-height: 1.4;
+    color: var(--text-normal, #dbdee1);
+    resize: none;
+    background: var(--background-tertiary, #1e1f22);
+    border: none;
+    border-radius: 8px;
+    outline: none;
+}
+
+.vc-irc-composer-input::placeholder {
+    color: var(--text-muted, #949ba4);
+}
+
+.vc-irc-composer-input:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+}
+
+.vc-irc-composer-send {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    width: 38px;
+    height: 38px;
+    color: #fff;
+    cursor: pointer;
+    background: var(--brand-500, #5865f2);
+    border: none;
+    border-radius: 8px;
+}
+
+.vc-irc-composer-send:disabled {
+    cursor: not-allowed;
+    opacity: 0.4;
+}
