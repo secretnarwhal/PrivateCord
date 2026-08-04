@@ -7,6 +7,7 @@
 - Mass Deleter
 - Gif Folders
 - Chatbar Buttons Tray
+- Kaomoji Keyboard
 - Base Converter Decoder
 - Default Ven Auto-Translate Improved
 - AI chat panel (points to local gateway)
