@@ -17,15 +17,13 @@
 */
 
 import { ChatBarButton, ChatBarButtonFactory } from "@api/ChatButtons";
-import { sendMessage } from "@utils/discord";
 import { classes } from "@utils/misc";
 import { IconComponent } from "@utils/types";
 import { ContextMenuApi, DraftStore, DraftType, Menu, React, ReactDOM, showToast, Toasts, useEffect, useRef, useState } from "@webpack/common";
 
 import { openComposeModal, openSetPasswordModal } from "./modals";
 import { getSecretDraft, setSecretDraft, toggleRevealMode, useRevealMode, useSecretDraft } from "./revealState";
-import { encrypt } from "./stegcloak";
-import { cl, getRevealPassword, logger } from "./utils";
+import { cl } from "./utils";
 
 /** Eye icon, mirroring the Android plugin's avd_show_password "hidden message" indicator. */
 export const InvisibleMessagesIcon: IconComponent = ({ height = 20, width = 20, className }) => (
@@ -175,11 +173,19 @@ function SecondaryChatBar({ channelId }: { channelId: string; }) {
         };
     }, [channelId]);
 
-    // Pressing Enter in the secret bar sends just like the main chat bar: whatever
-    // is currently typed in the real chat box is the visible cover, and the secret
-    // is woven into it (same path the compose modal uses, so the pre-send listener
-    // doesn't run again and double-encrypt).
-    const submitSecret = async () => {
+    // Pressing Enter in the secret bar sends by pressing Enter in the *real* chat
+    // bar for you, rather than sending the message itself.
+    //
+    // Encrypting and calling sendMessage() here bypassed everything Discord does
+    // around a send, and the chat box then had to be emptied by hand. Deleting its
+    // DOM text (document.execCommand) left Slate's editor state and the saved draft
+    // still holding the cover: the box looked empty but kept its placeholder hidden,
+    // and the next Enter re-sent that stale draft instead of what had just been
+    // typed. Going through the real chat bar means Discord clears the box, the
+    // draft, the reply bar and any queued uploads exactly as it always does — and
+    // the plugin's own pre-send listener still weaves the secret in, so nothing is
+    // encrypted twice.
+    const submitSecret = () => {
         const form = (anchorRef.current?.closest("form")
             ?? anchorRef.current?.closest('[class*="channelTextArea"]')) as HTMLElement | null;
         const editable = form?.querySelector<HTMLElement>('[role="textbox"]') ?? null;
@@ -201,20 +207,23 @@ function SecondaryChatBar({ channelId }: { channelId: string; }) {
             return;
         }
 
-        try {
-            const encoded = await encrypt(getRevealPassword(channelId), secret, cover);
-            await sendMessage(channelId, { content: encoded });
-            setSecretDraft(channelId, "");
-            // Clear the cover out of the real chat box, exactly like a normal send.
-            if (editable) {
-                editable.focus();
-                document.execCommand("selectAll", false);
-                document.execCommand("delete", false);
-            }
-        } catch (e) {
-            logger.error("Failed to hide secret from the reveal-mode chatbar", e);
-            showToast("Failed to hide the secret message", Toasts.Type.FAILURE);
+        if (!editable) {
+            showToast("Couldn't find the chat box to send from", Toasts.Type.FAILURE);
+            return;
         }
+
+        // Focus first: if the synthetic keypress below is ever ignored, the cursor
+        // is already in the chat box and one more Enter sends it normally.
+        editable.focus();
+        editable.dispatchEvent(new KeyboardEvent("keydown", {
+            key: "Enter",
+            code: "Enter",
+            // Slate's hotkey matching still reads the legacy fields.
+            keyCode: 13,
+            which: 13,
+            bubbles: true,
+            cancelable: true
+        }));
     };
 
     const bar = pos && ReactDOM.createPortal(
@@ -234,7 +243,7 @@ function SecondaryChatBar({ channelId }: { channelId: string; }) {
                 onKeyDown={e => {
                     if (e.key === "Enter" && !e.shiftKey) {
                         e.preventDefault();
-                        void submitSecret();
+                        submitSecret();
                     }
                 }}
                 spellCheck={false}

@@ -19,7 +19,7 @@ export const settings = definePluginSettings({
             <section>
                 <Paragraph>
                     Presets and running repeats live in the Ghost Panel. You can also open it by
-                    right clicking the ghost button in the chat bar, or with <code>/ghostpanel</code>.
+                    left clicking the ghost button in the chat bar, or with <code>/ghostpanel</code>.
                 </Paragraph>
                 <Button style={{ marginTop: 8 }} onClick={openGhostPanel}>Open Ghost Panel</Button>
             </section>

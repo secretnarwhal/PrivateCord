@@ -41,12 +41,12 @@ const GhostToggle: ChatBarButtonFactory = ({ isMainChat }) => {
     return (
         <ChatBarButton
             tooltip={enabled
-                ? "Ghost mode on — your messages delete themselves (right click for presets)"
-                : "Ghost mode off (right click for presets)"}
-            onClick={() => setGhostMode(!enabled)}
+                ? "Ghost mode on — your messages delete themselves (left click for presets)"
+                : "Ghost mode off (left click for presets)"}
+            onClick={() => openGhostPanelModal()}
             onContextMenu={e => {
                 e.preventDefault();
-                openGhostPanelModal();
+                setGhostMode(!enabled);
             }}
         >
             {enabled ? <GhostIcon /> : <GhostDisabledIcon />}

@@ -6,25 +6,27 @@
 
 import type { IconComponent } from "@utils/types";
 
-/** A `(^ ^)` face, drawn — the chat bar button and the plugin's mark. */
+/** The literal `(•ω•)` kaomoji, set as text — the chat bar button and the plugin's mark. */
 export const KaomojiIcon: IconComponent = ({ width = 24, height = 24, className }) => (
     <svg
         width={width}
         height={height}
         className={className}
         viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth={1.7}
-        strokeLinecap="round"
-        strokeLinejoin="round"
         aria-hidden="true"
     >
-        <path d="M7.6 4.8C4.9 7.4 4.9 16.6 7.6 19.2" />
-        <path d="M16.4 4.8c2.7 2.6 2.7 11.8 0 14.4" />
-        <path d="M8.6 12.4 10.2 10.2 11.8 12.4" />
-        <path d="M12.2 12.4 13.8 10.2 15.4 12.4" />
-        <path d="M10 15.4c1.3 1.1 2.7 1.1 4 0" />
+        <text
+            x="12"
+            y="15.3"
+            textAnchor="middle"
+            textLength="19"
+            lengthAdjust="spacingAndGlyphs"
+            fontSize="10.5"
+            fontFamily="'Segoe UI Symbol', 'Segoe UI Emoji', sans-serif"
+            fill="currentColor"
+        >
+            (•ω•)
+        </text>
     </svg>
 );
 
