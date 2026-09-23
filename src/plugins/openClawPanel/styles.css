@@ -26,7 +26,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    background: rgba(0, 0, 0, 0.6);
+    background: rgb(0 0 0 / 60%);
 
     /* ── Dark-theme variable fallbacks ── */
     --text-normal: #dbdee1;
@@ -41,8 +41,8 @@
     --background-secondary: #2b2d31;
     --background-secondary-alt: #232428;
     --background-tertiary: #1e1f22;
-    --background-modifier-hover: rgba(79, 84, 92, 0.16);
-    --background-modifier-accent: hsla(228, 6%, 33%, 0.48);
+    --background-modifier-hover: rgb(79 84 92 / 16%);
+    --background-modifier-accent: hsl(228deg 6% 33% / 48%);
     --brand-500: #5865f2;
     --brand-560: #4752c4;
     --brand-experiment: #5865f2;
@@ -65,7 +65,7 @@
     background: var(--background-primary, #313338);
     border-radius: 12px;
     overflow: hidden;
-    box-shadow: 0 8px 40px rgba(0, 0, 0, 0.5);
+    box-shadow: 0 8px 40px rgb(0 0 0 / 50%);
     color: var(--text-normal, #dbdee1);
 }
 
@@ -143,9 +143,8 @@
     font-family: inherit;
     outline: none;
     cursor: pointer;
-    max-width: 220px;
+    max-width: 200px;
     transition: border-color 0.15s ease;
-    -webkit-appearance: none;
     appearance: none;
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24'%3E%3Cpath fill='%23949ba4' d='M7 10l5 5 5-5z'/%3E%3C/svg%3E");
     background-repeat: no-repeat;
@@ -230,9 +229,11 @@
 .vc-openclaw-chat-messages::-webkit-scrollbar {
     width: 6px;
 }
+
 .vc-openclaw-chat-messages::-webkit-scrollbar-track {
     background: transparent;
 }
+
 .vc-openclaw-chat-messages::-webkit-scrollbar-thumb {
     background: var(--background-modifier-accent);
     border-radius: 3px;
@@ -272,8 +273,15 @@
 }
 
 @keyframes vc-openclaw-pulse {
-    0%, 100% { opacity: 0.4; transform: scale(1); }
-    50% { opacity: 0.8; transform: scale(1.1); }
+    0%, 100% {
+        opacity: 0.4;
+        transform: scale(1);
+    }
+
+    50% {
+        opacity: 0.8;
+        transform: scale(1.1);
+    }
 }
 
 .vc-openclaw-chat-empty-heading {
@@ -303,12 +311,19 @@
     padding: 10px 14px;
     border-radius: 12px;
     max-width: 85%;
-    animation: vc-openclaw-fadeIn 0.2s ease;
+    animation: vc-openclaw-fade-in 0.2s ease;
 }
 
-@keyframes vc-openclaw-fadeIn {
-    from { opacity: 0; transform: translateY(4px); }
-    to   { opacity: 1; transform: translateY(0); }
+@keyframes vc-openclaw-fade-in {
+    from {
+        opacity: 0;
+        transform: translateY(4px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }
 
 .vc-openclaw-chat-bubble-user {
@@ -336,14 +351,14 @@
 }
 
 .vc-openclaw-chat-bubble-user .vc-openclaw-chat-bubble-role {
-    color: rgba(255, 255, 255, 0.7);
+    color: rgb(255 255 255 / 70%);
 }
 
 .vc-openclaw-chat-bubble-text {
     font-size: 14px;
     line-height: 1.5;
     white-space: pre-wrap;
-    word-break: break-word;
+    overflow-wrap: break-word;
     color: inherit;
 }
 
@@ -369,8 +384,15 @@
 .vc-openclaw-chat-typing-dot:nth-child(3) { animation-delay: 0.4s; }
 
 @keyframes vc-openclaw-bounce {
-    0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
-    30% { transform: translateY(-6px); opacity: 1; }
+    0%, 60%, 100% {
+        transform: translateY(0);
+        opacity: 0.4;
+    }
+
+    30% {
+        transform: translateY(-6px);
+        opacity: 1;
+    }
 }
 
 /* ── Chat error banner ───────────────────────────────────────────── */
@@ -458,13 +480,13 @@
     transition: background 0.15s ease, opacity 0.15s ease;
 }
 
-.vc-openclaw-chat-send-btn:hover:not(:disabled) {
-    background: var(--brand-560, #4752c4);
-}
-
 .vc-openclaw-chat-send-btn:disabled {
     opacity: 0.35;
     cursor: not-allowed;
+}
+
+.vc-openclaw-chat-send-btn:hover:not(:disabled) {
+    background: var(--brand-560, #4752c4);
 }
 
 .vc-openclaw-chat-stop-btn {
@@ -738,29 +760,4 @@
 
 .vc-openclaw-session-row-current {
     border-color: var(--brand-500, #5865f2);
-}
-
-/* ── Model selector ──────────────────────────────────────────────── */
-
-.vc-openclaw-model-select {
-    background: var(--background-tertiary, #1e1f22);
-    color: var(--text-normal, #dbdee1);
-    border: 1px solid var(--background-modifier-accent);
-    border-radius: 4px;
-    padding: 4px 8px;
-    font-size: 12px;
-    font-family: inherit;
-    outline: none;
-    cursor: pointer;
-    max-width: 200px;
-    transition: border-color 0.15s ease;
-}
-
-.vc-openclaw-model-select:focus {
-    border-color: var(--brand-500, #5865f2);
-}
-
-.vc-openclaw-model-select option {
-    background: var(--background-tertiary, #1e1f22);
-    color: var(--text-normal, #dbdee1);
 }

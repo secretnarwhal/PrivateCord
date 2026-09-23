@@ -19,14 +19,14 @@
 import "./styles.css";
 
 import { findGroupChildrenByChildId, NavContextMenuPatchCallback } from "@api/ContextMenu";
-import { MessageObject, MessageOptions } from "@api/MessageEvents";
+import { MessageObject, SendMessageProps } from "@api/MessageEvents";
 import definePlugin from "@utils/types";
 import { Channel, CloudUpload, Message, User } from "@vencord/discord-types";
 import { ChannelStore, Menu, showToast, Toasts, UserStore } from "@webpack/common";
 
-import { encryptFile, isEncryptedAttachmentName } from "./encryptedAttachment";
 import { EncryptDMsAccessory, handleDecode, resolveAesKey } from "./EncryptDMsAccessory";
 import { EncryptDMsChatBarIcon, EncryptDMsIcon, scheduleAutoEncodeTooltipHide, setAutoEncodeTooltip } from "./EncryptDMsIcon";
+import { encryptFile, isEncryptedAttachmentName } from "./encryptedAttachment";
 import { settings } from "./settings";
 import { openUserKeyModal } from "./UserKeyModal";
 import { getAllUserKeys, getUserKey } from "./userKeys";
@@ -202,7 +202,7 @@ async function encryptUploads(uploads: CloudUpload[], key: string): Promise<void
     }
 }
 
-async function handleBeforeSend(channelId: string, message: MessageObject, options?: MessageOptions) {
+async function handleBeforeSend(channelId: string, message: MessageObject, props: SendMessageProps) {
     const outcome = await computeOutgoingEncoding(channelId, message.content);
     if (outcome.kind === "refuse") return { cancel: true };
     if (outcome.kind === "encoded") message.content = outcome.content;
@@ -210,21 +210,13 @@ async function handleBeforeSend(channelId: string, message: MessageObject, optio
     // "encoded" and "warn-attachment-only" are the two outcomes where the user has
     // encryption intent AND a usable key — the same gate applies to attachments.
     const encryptionIntent = outcome.kind === "encoded" || outcome.kind === "warn-attachment-only";
-    const allUploads = options?.uploads ?? [];
-    if (!encryptionIntent || allUploads.length === 0) return;
+    if (!encryptionIntent || !props.hasAttachments) return;
 
-    const uploads = getEncryptableUploads(allUploads);
-    if (settings.store.encryptAttachments && uploads.length > 0) {
-        const channel = ChannelStore.getChannel(channelId);
-        const { key: aesKey } = resolveSendAesKey(channel, settings.store.aesSecret);
-        try {
-            await encryptUploads(uploads, aesKey);
-        } catch {
-            // Never let a failed encryption fall through to a plaintext upload.
-            showToast("Failed to encrypt attachments — message not sent.", Toasts.Type.FAILURE);
-            return { cancel: true };
-        }
-    } else if (!settings.store.encryptAttachments && !attachmentWarnSeen.has(channelId)) {
+    if (settings.store.encryptAttachments) {
+        // The send hook no longer receives the upload list, so refuse rather than upload plaintext.
+        showToast("Message not sent: attachments can't be encrypted right now. Remove them or disable 'Encrypt attachments'.", Toasts.Type.FAILURE);
+        return { cancel: true };
+    } else if (!attachmentWarnSeen.has(channelId)) {
         attachmentWarnSeen.add(channelId);
         showToast("Attachments are not encrypted — only message text. Enable 'Encrypt attachments' in EncryptDMs settings.", Toasts.Type.MESSAGE);
     }
@@ -276,8 +268,8 @@ export default definePlugin({
         },
     },
 
-    async onBeforeMessageSend(channelId, message, options) {
-        return await handleBeforeSend(channelId, message, options);
+    async onBeforeMessageSend(channelId, message, _options, props) {
+        return await handleBeforeSend(channelId, message, props);
     },
 
     async onBeforeMessageEdit(channelId, _messageId, message) {

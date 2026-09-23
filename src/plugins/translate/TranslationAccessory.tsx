@@ -42,6 +42,7 @@ function Dismiss({ onDismiss }: { onDismiss: () => void; }) {
 
 export function TranslationAccessory({ message }: { message: Message; }) {
     const [translation, setTranslation] = useState<TranslationValue>();
+    const { autoTranslateReceived } = settings.use(["autoTranslateReceived"]);
 
     useEffect(() => {
         // Ignore MessageLinkEmbeds messages
@@ -49,20 +50,27 @@ export function TranslationAccessory({ message }: { message: Message; }) {
 
         TranslationSetters.set(message.id, setTranslation);
 
-        if (settings.store.autoTranslateReceived) {
-            const content = getMessageContent(message);
-            if (content) {
-                translate("received", content).then(result => {
-                    const targetLangName = getLanguages()[settings.store.receivedOutput];
-                    if (result.sourceLanguage !== targetLangName) {
-                        setTranslation(result);
-                    }
-                }).catch(() => {});
-            }
-        }
-
         return () => void TranslationSetters.delete(message.id);
     }, []);
+
+    // keyed on the setting so turning it on also translates the messages already on screen
+    useEffect(() => {
+        if (!autoTranslateReceived || (message as any).vencordEmbeddedBy) return;
+
+        const content = getMessageContent(message);
+        if (!content) return;
+
+        let cancelled = false;
+        translate("received", content).then(result => {
+            if (cancelled) return;
+            const targetLangName = getLanguages()[settings.store.receivedOutput];
+            if (result.sourceLanguage !== targetLangName) {
+                setTranslation(result);
+            }
+        }).catch(() => {});
+
+        return () => void (cancelled = true);
+    }, [autoTranslateReceived]);
 
     if (!translation) return null;
 

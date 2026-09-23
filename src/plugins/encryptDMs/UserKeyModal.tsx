@@ -16,15 +16,14 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-import { BaseText } from "@components/BaseText";
 import { Margins } from "@utils/margins";
-import { ModalCloseButton, ModalContent, ModalHeader, ModalProps, ModalRoot, openModal } from "@utils/modal";
-import { Forms, useRef, useState } from "@webpack/common";
+import { RenderModalProps } from "@vencord/discord-types";
+import { Forms, Modal, openModal, useRef, useState } from "@webpack/common";
 
 import { getUserKey, removeUserKey, setUserKey } from "./userKeys";
 import { cl } from "./utils";
 
-function UserKeyModal({ rootProps, userId, username }: { rootProps: ModalProps; userId: string; username: string; }) {
+function UserKeyModal({ rootProps, userId, username }: { rootProps: RenderModalProps; userId: string; username: string; }) {
     const existingKey = getUserKey(userId) ?? "";
     // Uncontrolled defaultValue prevents React from setting the DOM `value` attribute — partial mitigation against other plugins reading via querySelector; full mitigation needs an isolated iframe.
     const inputRef = useRef<HTMLInputElement>(null);
@@ -44,73 +43,64 @@ function UserKeyModal({ rootProps, userId, username }: { rootProps: ModalProps; 
     };
 
     return (
-        <ModalRoot {...rootProps}>
-            <ModalHeader className={cl("modal-header")}>
-                <BaseText tag="h2" size="lg" weight="semibold" className={cl("modal-title")}>
-                    AES Key — @{username}
-                </BaseText>
-                <ModalCloseButton onClick={rootProps.onClose} />
-            </ModalHeader>
-
-            <ModalContent className={cl("modal-content")}>
-                <section className={Margins.bottom16}>
-                    <Forms.FormTitle tag="h3">Per-User AES-256-GCM Secret Key</Forms.FormTitle>
-                    <Forms.FormText className={Margins.bottom8}>
-                        This key overrides the global secret when sending to or auto-decrypting messages from <strong>@{username}</strong>.
-                        Both users must enter the exact same key. Stored in plain text in your local Vencord settings.
-                    </Forms.FormText>
-                    <div className={cl("secret-row")}>
-                        <input
-                            ref={inputRef}
-                            type={visible ? "text" : "password"}
-                            className={cl("secret-input")}
-                            defaultValue={existingKey}
-                            onInput={e => setHasContent(e.currentTarget.value.trim().length > 0)}
-                            onKeyDown={e => { if (e.key === "Enter") save(); }}
-                            placeholder="Enter shared secret…"
-                            autoComplete="off"
-                            spellCheck={false}
-                            autoFocus
-                        />
-                        <button
-                            className={cl("secret-toggle")}
-                            onClick={() => setVisible(v => !v)}
-                            type="button"
-                            aria-label={visible ? "Hide secret" : "Show secret"}
-                        >
-                            {visible ? "Hide" : "Show"}
-                        </button>
-                    </div>
-                </section>
-
-                <div className={cl("user-key-actions")}>
+        <Modal {...rootProps} title={`AES Key — @${username}`}>
+            <section className={Margins.bottom16}>
+                <Forms.FormTitle tag="h3">Per-User AES-256-GCM Secret Key</Forms.FormTitle>
+                <Forms.FormText className={Margins.bottom8}>
+                    This key overrides the global secret when sending to or auto-decrypting messages from <strong>@{username}</strong>.
+                    Both users must enter the exact same key. Stored in plain text in your local Vencord settings.
+                </Forms.FormText>
+                <div className={cl("secret-row")}>
+                    <input
+                        ref={inputRef}
+                        type={visible ? "text" : "password"}
+                        className={cl("secret-input")}
+                        defaultValue={existingKey}
+                        onInput={e => setHasContent(e.currentTarget.value.trim().length > 0)}
+                        onKeyDown={e => { if (e.key === "Enter") save(); }}
+                        placeholder="Enter shared secret…"
+                        autoComplete="off"
+                        spellCheck={false}
+                        autoFocus
+                    />
                     <button
-                        className={cl("user-key-btn", "user-key-save")}
-                        onClick={save}
-                        disabled={!hasContent}
+                        className={cl("secret-toggle")}
+                        onClick={() => setVisible(v => !v)}
                         type="button"
+                        aria-label={visible ? "Hide secret" : "Show secret"}
                     >
-                        Save
-                    </button>
-                    {existingKey && (
-                        <button
-                            className={cl("user-key-btn", "user-key-clear")}
-                            onClick={clear}
-                            type="button"
-                        >
-                            Remove Key
-                        </button>
-                    )}
-                    <button
-                        className={cl("user-key-btn", "user-key-cancel")}
-                        onClick={rootProps.onClose}
-                        type="button"
-                    >
-                        Cancel
+                        {visible ? "Hide" : "Show"}
                     </button>
                 </div>
-            </ModalContent>
-        </ModalRoot>
+            </section>
+
+            <div className={cl("user-key-actions")}>
+                <button
+                    className={cl("user-key-btn", "user-key-save")}
+                    onClick={save}
+                    disabled={!hasContent}
+                    type="button"
+                >
+                    Save
+                </button>
+                {existingKey && (
+                    <button
+                        className={cl("user-key-btn", "user-key-clear")}
+                        onClick={clear}
+                        type="button"
+                    >
+                        Remove Key
+                    </button>
+                )}
+                <button
+                    className={cl("user-key-btn", "user-key-cancel")}
+                    onClick={rootProps.onClose}
+                    type="button"
+                >
+                    Cancel
+                </button>
+            </div>
+        </Modal>
     );
 }
 

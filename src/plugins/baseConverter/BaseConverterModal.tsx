@@ -16,15 +16,14 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-import { BaseText } from "@components/BaseText";
 import { Divider } from "@components/Divider";
 import { FormSwitch } from "@components/FormSwitch";
 import { Margins } from "@utils/margins";
-import { ModalCloseButton, ModalContent, ModalHeader, ModalProps, ModalRoot, openModal } from "@utils/modal";
-import { Forms, SearchableSelect } from "@webpack/common";
+import { RenderModalProps } from "@vencord/discord-types";
+import { Forms, Modal, openModal, SearchableSelect } from "@webpack/common";
 
 import { settings } from "./settings";
-import { cl, DECODE_OPTIONS, ENCODE_OPTIONS } from "./utils";
+import { DECODE_OPTIONS, ENCODE_OPTIONS } from "./utils";
 
 function EncodingSelect({
     label,
@@ -78,35 +77,26 @@ function AutoEncodeToggle() {
     );
 }
 
-function BaseConverterModal({ rootProps }: { rootProps: ModalProps; }) {
+function BaseConverterModal({ rootProps }: { rootProps: RenderModalProps; }) {
     return (
-        <ModalRoot {...rootProps}>
-            <ModalHeader className={cl("modal-header")}>
-                <BaseText tag="h2" size="lg" weight="semibold" className={cl("modal-title")}>
-                    Base Converter
-                </BaseText>
-                <ModalCloseButton onClick={rootProps.onClose} />
-            </ModalHeader>
+        <Modal {...rootProps} title="Base Converter">
+            <EncodingSelect
+                label="Decode received messages from"
+                settingsKey="receiveEncoding"
+                options={DECODE_OPTIONS}
+            />
 
-            <ModalContent className={cl("modal-content")}>
-                <EncodingSelect
-                    label="Decode received messages from"
-                    settingsKey="receiveEncoding"
-                    options={DECODE_OPTIONS}
-                />
+            <EncodingSelect
+                label="Encode sent messages to"
+                settingsKey="sendEncoding"
+                options={ENCODE_OPTIONS}
+            />
 
-                <EncodingSelect
-                    label="Encode sent messages to"
-                    settingsKey="sendEncoding"
-                    options={ENCODE_OPTIONS}
-                />
+            <Divider className={Margins.bottom16} />
 
-                <Divider className={Margins.bottom16} />
-
-                <AutoDecodeToggle />
-                <AutoEncodeToggle />
-            </ModalContent>
-        </ModalRoot>
+            <AutoDecodeToggle />
+            <AutoEncodeToggle />
+        </Modal>
     );
 }
 

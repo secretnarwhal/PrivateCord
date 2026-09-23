@@ -919,12 +919,12 @@
 }
 
 .vc-lm-tabs-action {
-    margin-inline-start: auto;
-    margin-inline-end: 4px;
+    margin-inline: auto 4px;
 }
 
 /* The queue itself. Rows are drag handles in their own right, so the whole row
    takes the grab cursor and the grip is only there to say so. */
+
 /* beats the shared list's margin, which is only there to clear the search field.
    The padding is room for the drop line above the first row, which would otherwise
    be clipped by the scroll container it sits at the very top of. */

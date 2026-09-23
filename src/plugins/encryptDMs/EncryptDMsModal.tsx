@@ -16,12 +16,11 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-import { BaseText } from "@components/BaseText";
 import { Divider } from "@components/Divider";
 import { FormSwitch } from "@components/FormSwitch";
 import { Margins } from "@utils/margins";
-import { ModalCloseButton, ModalContent, ModalHeader, ModalProps, ModalRoot, openModal } from "@utils/modal";
-import { Forms, useEffect, useRef, UserStore, useState } from "@webpack/common";
+import { RenderModalProps } from "@vencord/discord-types";
+import { Forms, Modal, openModal, useEffect, useRef, UserStore, useState } from "@webpack/common";
 
 import { settings } from "./settings";
 import { openUserKeyModal } from "./UserKeyModal";
@@ -145,27 +144,18 @@ function UserKeysSection() {
     );
 }
 
-function EncryptDMsModal({ rootProps }: { rootProps: ModalProps; }) {
+function EncryptDMsModal({ rootProps }: { rootProps: RenderModalProps; }) {
     return (
-        <ModalRoot {...rootProps}>
-            <ModalHeader className={cl("modal-header")}>
-                <BaseText tag="h2" size="lg" weight="semibold" className={cl("modal-title")}>
-                    EncryptDMs
-                </BaseText>
-                <ModalCloseButton onClick={rootProps.onClose} />
-            </ModalHeader>
+        <Modal {...rootProps} title="EncryptDMs">
+            <AesSecretInput />
 
-            <ModalContent className={cl("modal-content")}>
-                <AesSecretInput />
+            <Divider className={Margins.bottom16} />
 
-                <Divider className={Margins.bottom16} />
+            <AutoDecodeToggle />
+            <AutoEncodeToggle />
 
-                <AutoDecodeToggle />
-                <AutoEncodeToggle />
-
-                <UserKeysSection />
-            </ModalContent>
-        </ModalRoot>
+            <UserKeysSection />
+        </Modal>
     );
 }
 

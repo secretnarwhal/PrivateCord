@@ -185,7 +185,7 @@ export async function request(
             }
             if (!key || !model) throw new Error("key and model are required");
 
-            const safeParams = JSON.stringify({ key, model }).replace(/'/g, "'\\\''");
+            const safeParams = JSON.stringify({ key, model }).replace(/'/g, "'\\''");
             const resText = await runCliCommand(`gateway call sessions.patch --params '${safeParams}' --json`);
             return JSON.parse(resText);
         }

@@ -18,6 +18,10 @@ import { CopyIcon, FolderIcon, SendIcon, UnstarIcon } from "./icons";
 
 /** ms hovering a drop target before it "spring loads" (auto-navigates) like an OS file explorer */
 const SPRING_LOAD_DELAY = 650;
+/** ms hovering a gif before it grows to show the whole thing, so sweeping across the grid doesn't flash every tile */
+const EXPAND_DELAY = 150;
+/** gap kept between an expanded gif and the edges of the scroll area */
+const EXPAND_MARGIN = 8;
 
 export function QuickAction({ tooltip, onClick, children, danger }: {
     tooltip: string;
@@ -96,6 +100,58 @@ function LazyMedia({ gif, shouldPlay }: { gif: FavGif; shouldPlay: boolean; }) {
     );
 }
 
+function getMediaAspect(gif: FavGif, tile: HTMLElement) {
+    // prefer the loaded file's real size; the stored favorite dimensions are only a fallback
+    const el = tile.querySelector(`.${cl("media-el")}`);
+    const [w, h] = el instanceof HTMLVideoElement
+        ? [el.videoWidth, el.videoHeight]
+        : el instanceof HTMLImageElement
+            ? [el.naturalWidth, el.naturalHeight]
+            : [0, 0];
+
+    if (w > 0 && h > 0) return w / h;
+    return gif.width > 0 && gif.height > 0 ? gif.width / gif.height : 1;
+}
+
+/**
+ * Box (relative to the tile) that shows the whole gif: the tile keeps its size along the axis the square
+ * crop cuts and grows along the other one to the gif's aspect ratio. The box is then shrunk and shifted
+ * as needed to stay within the visible part of the scroller, which would otherwise clip it.
+ */
+function getExpandedBox(tile: HTMLElement, aspect: number): CSSProperties {
+    const t = tile.getBoundingClientRect();
+    let { width, height } = t;
+    if (aspect > 1) width = t.height * aspect;
+    else height = t.width / aspect;
+
+    // visible area of the scroller; client* excludes its scrollbar
+    const scroller = tile.closest<HTMLElement>(`.${cl("scroller")}`);
+    const rect = scroller?.getBoundingClientRect();
+    const view = scroller && rect
+        ? {
+            left: rect.left + scroller.clientLeft,
+            top: rect.top + scroller.clientTop,
+            width: scroller.clientWidth,
+            height: scroller.clientHeight
+        }
+        : { left: 0, top: 0, width: window.innerWidth, height: window.innerHeight };
+
+    const minX = view.left + EXPAND_MARGIN;
+    const minY = view.top + EXPAND_MARGIN;
+    const maxX = view.left + view.width - EXPAND_MARGIN;
+    const maxY = view.top + view.height - EXPAND_MARGIN;
+
+    const fit = Math.min(1, (maxX - minX) / width, (maxY - minY) / height);
+    width *= fit;
+    height *= fit;
+
+    const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), hi);
+    const left = clamp(t.left + (t.width - width) / 2, minX, maxX - width);
+    const top = clamp(t.top + (t.height - height) / 2, minY, maxY - height);
+
+    return { left: left - t.left, top: top - t.top, width, height };
+}
+
 export interface GifTileProps {
     gif: FavGif;
     index: number;
@@ -110,13 +166,39 @@ export interface GifTileProps {
 export function GifTile({ gif, index, showFolderChip, onActivate, onSend, onNavigate, onContextMenu }: GifTileProps) {
     const [hovered, setHovered] = useState(false);
     const [dragging, setDragging] = useState(false);
+    const [expandedBox, setExpandedBox] = useState<CSSProperties | null>(null);
+    const tileRef = useRef<HTMLDivElement>(null);
+    const expandTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
     const meta = getGifMeta(gif.url);
     const name = prettyGifName(gif, meta);
     const folder = showFolderChip ? getFolder(getGifFolderId(gif.url)) : undefined;
     const tags = meta?.tags ?? [];
 
+    const expand = () => {
+        const tile = tileRef.current;
+        if (tile) setExpandedBox(getExpandedBox(tile, getMediaAspect(gif, tile)));
+    };
+
+    const collapse = () => {
+        clearTimeout(expandTimer.current);
+        setExpandedBox(null);
+    };
+
+    useEffect(() => () => clearTimeout(expandTimer.current), []);
+
+    // the box is fitted to the scroller's visible area, so refit it when the grid scrolls under the cursor
+    const isExpanded = expandedBox != null;
+    useEffect(() => {
+        if (!isExpanded) return;
+        const scroller = tileRef.current?.closest(`.${cl("scroller")}`);
+        scroller?.addEventListener("scroll", expand, { passive: true });
+        return () => scroller?.removeEventListener("scroll", expand);
+    }, [isExpanded]);
+
     const onDragStart = (e: DragEvent) => {
+        // an expanded tile would sit on top of the folders you're trying to drop onto
+        collapse();
         setActiveDrag({ kind: "gif", url: gif.url });
         setDragging(true);
         e.dataTransfer.effectAllowed = "copyMove";
@@ -134,7 +216,8 @@ export function GifTile({ gif, index, showFolderChip, onActivate, onSend, onNavi
 
     return (
         <div
-            className={cl("gif-tile", { "tile-dragging": dragging })}
+            ref={tileRef}
+            className={cl("gif-tile", { "tile-dragging": dragging, "tile-expanded": isExpanded })}
             style={{ "--vc-gv-delay": `${Math.min(index, 24) * 16}ms` } as CSSProperties}
             role="button"
             tabIndex={-1}
@@ -142,8 +225,15 @@ export function GifTile({ gif, index, showFolderChip, onActivate, onSend, onNavi
             draggable
             onDragStart={onDragStart}
             onDragEnd={onDragEnd}
-            onMouseEnter={() => setHovered(true)}
-            onMouseLeave={() => setHovered(false)}
+            onMouseEnter={() => {
+                setHovered(true);
+                clearTimeout(expandTimer.current);
+                expandTimer.current = setTimeout(expand, EXPAND_DELAY);
+            }}
+            onMouseLeave={() => {
+                setHovered(false);
+                collapse();
+            }}
             onClick={() => onActivate(gif)}
             onContextMenu={e => {
                 e.preventDefault();
@@ -151,41 +241,44 @@ export function GifTile({ gif, index, showFolderChip, onActivate, onSend, onNavi
                 onContextMenu(e, gif);
             }}
         >
-            <LazyMedia gif={gif} shouldPlay={playAll || hovered} />
+            {/* the grid cell stays square; this card is what grows past it on hover */}
+            <div className={cl("tile-card")} style={expandedBox ?? undefined}>
+                <LazyMedia gif={gif} shouldPlay={playAll || hovered} />
 
-            <div className={cl("tile-overlay")}>
-                <div className={cl("tile-name")}>{name}</div>
-                {(folder || tags.length > 0) && (
-                    <div className={cl("tile-chips")}>
-                        {folder && (
-                            <button
-                                className={cl("chip", "chip-folder")}
-                                onClick={e => {
-                                    e.stopPropagation();
-                                    onNavigate(folder.id);
-                                }}
-                            >
-                                <FolderIcon size={10} style={{ color: folder.color ?? "var(--vc-gv-accent)" }} />
-                                {folder.name}
-                            </button>
-                        )}
-                        {tags.slice(0, 2).map(tag => (
-                            <span key={tag} className={cl("chip")}>#{tag}</span>
-                        ))}
-                    </div>
-                )}
-            </div>
+                <div className={cl("tile-overlay")}>
+                    <div className={cl("tile-name")}>{name}</div>
+                    {(folder || tags.length > 0) && (
+                        <div className={cl("tile-chips")}>
+                            {folder && (
+                                <button
+                                    className={cl("chip", "chip-folder")}
+                                    onClick={e => {
+                                        e.stopPropagation();
+                                        onNavigate(folder.id);
+                                    }}
+                                >
+                                    <FolderIcon size={10} style={{ color: folder.color ?? "var(--vc-gv-accent)" }} />
+                                    {folder.name}
+                                </button>
+                            )}
+                            {tags.slice(0, 2).map(tag => (
+                                <span key={tag} className={cl("chip")}>#{tag}</span>
+                            ))}
+                        </div>
+                    )}
+                </div>
 
-            <div className={cl("tile-actions")}>
-                <QuickAction tooltip="Send now" onClick={() => onSend(gif)}>
-                    <SendIcon size={13} />
-                </QuickAction>
-                <QuickAction tooltip="Copy link" onClick={() => copyWithToast(gif.url, "Link copied!")}>
-                    <CopyIcon size={13} />
-                </QuickAction>
-                <QuickAction danger tooltip="Remove from favorites" onClick={() => removeFavorite(gif.url)}>
-                    <UnstarIcon size={13} />
-                </QuickAction>
+                <div className={cl("tile-actions")}>
+                    <QuickAction tooltip="Send now" onClick={() => onSend(gif)}>
+                        <SendIcon size={13} />
+                    </QuickAction>
+                    <QuickAction tooltip="Copy link" onClick={() => copyWithToast(gif.url, "Link copied!")}>
+                        <CopyIcon size={13} />
+                    </QuickAction>
+                    <QuickAction danger tooltip="Remove from favorites" onClick={() => removeFavorite(gif.url)}>
+                        <UnstarIcon size={13} />
+                    </QuickAction>
+                </div>
             </div>
         </div>
     );

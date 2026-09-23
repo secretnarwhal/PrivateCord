@@ -22,8 +22,8 @@ import { classes } from "@utils/misc";
 import { IconComponent } from "@utils/types";
 import { useEffect, useState } from "@webpack/common";
 
-import { settings } from "./settings";
 import { openBaseConverterModal } from "./BaseConverterModal";
+import { settings } from "./settings";
 import { cl } from "./utils";
 
 /**
@@ -40,9 +40,9 @@ export const BaseConverterIcon: IconComponent = ({ height = 20, width = 20, clas
         className={classes(cl("icon"), className)}
     >
         {/* Binary bars: 1 0 1 */}
-        <rect x="1"  y="3"  width="2.5" height="18" rx="1" />
-        <rect x="5"  y="8"  width="2.5" height="8"  rx="1" />
-        <rect x="9"  y="3"  width="2.5" height="18" rx="1" />
+        <rect x="1" y="3" width="2.5" height="18" rx="1" />
+        <rect x="5" y="8" width="2.5" height="8" rx="1" />
+        <rect x="9" y="3" width="2.5" height="18" rx="1" />
 
         {/* Arrow shaft */}
         <rect x="13.5" y="10.5" width="5" height="1.5" />
@@ -50,7 +50,7 @@ export const BaseConverterIcon: IconComponent = ({ height = 20, width = 20, clas
         <polygon points="18.5,8 22,11.25 18.5,14.5" />
 
         {/* Text lines (decoded content representation) */}
-        <rect x="13.5" y="5"  width="9" height="1.5" rx="0.75" />
+        <rect x="13.5" y="5" width="9" height="1.5" rx="0.75" />
         <rect x="13.5" y="17" width="7" height="1.5" rx="0.75" />
     </svg>
 );

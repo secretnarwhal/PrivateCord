@@ -4,8 +4,6 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-import { useCallback, useEffect, useRef, useState } from "@webpack/common";
-
 import {
     abortChat,
     ChatMessage,
@@ -13,7 +11,8 @@ import {
     fetchChatHistory,
     messageText,
     sendChatMessage
-} from "../utils";
+} from "@plugins/openClawPanel/utils";
+import { useCallback, useEffect, useRef, useState } from "@webpack/common";
 
 // ── Icons ────────────────────────────────────────────────────────────────
 

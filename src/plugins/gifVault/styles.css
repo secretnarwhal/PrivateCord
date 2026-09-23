@@ -7,8 +7,8 @@
     --vc-gv-bg-1: var(--background-primary, #313338);
     --vc-gv-bg-2: var(--background-secondary, #2b2d31);
     --vc-gv-bg-3: var(--background-tertiary, #1e1f22);
-    --vc-gv-border: var(--background-modifier-accent, hsla(0, 0%, 100%, 0.08));
-    --vc-gv-hover: var(--background-modifier-hover, hsla(0, 0%, 100%, 0.06));
+    --vc-gv-border: var(--background-modifier-accent, hsl(0deg 0% 100% / 8%));
+    --vc-gv-hover: var(--background-modifier-hover, hsl(0deg 0% 100% / 6%));
     --vc-gv-text: var(--text-normal, #dbdee1);
     --vc-gv-muted: var(--text-muted, #949ba4);
     --vc-gv-header: var(--header-primary, #f2f3f5);
@@ -145,6 +145,11 @@
     transition: color 0.12s ease, background 0.12s ease, border-color 0.12s ease, transform 0.1s ease;
 }
 
+.vc-gifvault-icon-btn:disabled {
+    opacity: 0.35;
+    cursor: default;
+}
+
 .vc-gifvault-icon-btn:hover:not(:disabled) {
     color: var(--vc-gv-header);
     background: var(--vc-gv-hover);
@@ -153,11 +158,6 @@
 
 .vc-gifvault-icon-btn:active:not(:disabled) {
     transform: scale(0.93);
-}
-
-.vc-gifvault-icon-btn:disabled {
-    opacity: 0.35;
-    cursor: default;
 }
 
 /* ---------- breadcrumbs ---------- */
@@ -189,14 +189,14 @@
     transition: color 0.12s ease, background 0.12s ease;
 }
 
-.vc-gifvault-up-btn:hover:not(:disabled) {
-    background: var(--vc-gv-hover);
-    color: var(--vc-gv-header);
-}
-
 .vc-gifvault-up-btn:disabled {
     opacity: 0.3;
     cursor: default;
+}
+
+.vc-gifvault-up-btn:hover:not(:disabled) {
+    background: var(--vc-gv-hover);
+    color: var(--vc-gv-header);
 }
 
 .vc-gifvault-crumb-list {
@@ -317,16 +317,16 @@
     transform: translateY(-2px);
 }
 
-.vc-gifvault-folder-card:hover .vc-gifvault-folder-glyph {
-    transform: scale(1.05) rotate(-1.5deg);
-}
-
 .vc-gifvault-folder-glyph {
     position: relative;
     width: 58px;
     height: 46px;
     filter: drop-shadow(0 5px 10px rgb(0 0 0 / 28%));
     transition: transform 0.18s cubic-bezier(0.2, 0.9, 0.3, 1.4);
+}
+
+.vc-gifvault-folder-card:hover .vc-gifvault-folder-glyph {
+    transform: scale(1.05) rotate(-1.5deg);
 }
 
 /* folder tab */
@@ -386,7 +386,7 @@
     line-height: 1.25;
     text-align: center;
     color: var(--vc-gv-text);
-    word-break: break-word;
+    overflow-wrap: break-word;
 }
 
 .vc-gifvault-folder-rename {
@@ -411,30 +411,59 @@
     gap: 10px;
 }
 
+/* the grid cell: a fixed square slot. everything visible lives in .vc-gifvault-tile-card */
 .vc-gifvault-gif-tile {
     position: relative;
+    z-index: 0;
     aspect-ratio: 1;
-    overflow: hidden;
-    border-radius: 12px;
-    background: var(--vc-gv-bg-3);
     cursor: pointer;
     user-select: none;
     animation: vc-gv-pop 0.35s cubic-bezier(0.2, 0.9, 0.3, 1.2) backwards;
     animation-delay: var(--vc-gv-delay, 0ms);
-    transition: transform 0.16s ease, box-shadow 0.16s ease;
+
+    /* stay above the neighbours until the card has finished shrinking back */
+    transition: z-index 0s linear 0.18s;
 }
 
 .vc-gifvault-gif-tile:hover {
     z-index: 1;
-    transform: translateY(-2px) scale(1.02);
-    box-shadow:
-        0 10px 24px rgb(0 0 0 / 45%),
-        0 0 0 2px color-mix(in oklab, var(--vc-gv-accent) 65%, transparent);
+    transition-delay: 0s;
+}
+
+.vc-gifvault-tile-expanded {
+    z-index: 2;
+    transition-delay: 0s;
 }
 
 .vc-gifvault-tile-dragging {
     opacity: 0.35;
     transform: scale(0.95);
+}
+
+/* on hover GifTile sets top/left/width/height inline so the card matches the gif's aspect ratio */
+.vc-gifvault-tile-card {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    border-radius: 12px;
+    background: var(--vc-gv-bg-3);
+    transition:
+        top 0.18s ease,
+        left 0.18s ease,
+        width 0.18s ease,
+        height 0.18s ease,
+        transform 0.16s ease,
+        box-shadow 0.16s ease;
+}
+
+.vc-gifvault-gif-tile:hover .vc-gifvault-tile-card {
+    transform: translateY(-2px) scale(1.02);
+    box-shadow:
+        0 10px 24px rgb(0 0 0 / 45%),
+        0 0 0 2px color-mix(in oklab, var(--vc-gv-accent) 65%, transparent);
 }
 
 .vc-gifvault-media {
@@ -741,6 +770,7 @@
     flex: 1;
 }
 
+/* stylelint-disable-next-line no-descending-specificity -- belongs with the popout rules; the :hover rule above is more specific and wins regardless of order */
 .vc-gifvault-popout .vc-gifvault-icon-btn {
     width: 26px;
     height: 26px;
@@ -815,7 +845,12 @@
         animation: none;
     }
 
-    .vc-gifvault-gif-tile:hover,
+    /* still expands to show the whole gif, just without animating */
+    .vc-gifvault-gif-tile .vc-gifvault-tile-card {
+        transition: none;
+    }
+
+    .vc-gifvault-gif-tile:hover .vc-gifvault-tile-card,
     .vc-gifvault-folder-card:hover {
         transform: none;
     }

@@ -1,3 +1,9 @@
+/*
+ * Vencord, a Discord client mod
+ * Copyright (c) 2026 Vendicated and contributors
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ */
+
 import { definePluginSettings } from "@api/Settings";
 import { Button } from "@components/Button";
 import ErrorBoundary from "@components/ErrorBoundary";
@@ -5,22 +11,16 @@ import { Flex } from "@components/Flex";
 import { FormSwitch } from "@components/FormSwitch";
 import { DeleteIcon } from "@components/Icons";
 import { Logger } from "@utils/Logger";
-import {
-    ModalCloseButton,
-    ModalContent,
-    ModalFooter,
-    ModalHeader,
-    ModalRoot,
-    ModalSize,
-    openModal
-} from "@utils/modal";
 import definePlugin, { OptionType } from "@utils/types";
+import { RenderModalProps } from "@vencord/discord-types";
 import { ChannelType } from "@vencord/discord-types/enums";
 import { findComponentByCodeLazy } from "@webpack";
 import {
     ChannelStore,
     Forms,
     MessageActions,
+    Modal,
+    openModal,
     React,
     RestAPI,
     SelectedChannelStore,
@@ -29,8 +29,8 @@ import {
     TextInput,
     useEffect,
     useRef,
-    useState,
-    UserStore
+    UserStore,
+    useState
 } from "@webpack/common";
 import type { PropsWithChildren } from "react";
 
@@ -249,7 +249,7 @@ function getChannelContext() {
     return { channelId, guildId };
 }
 
-function MassDeleterUI({ transitionState, onClose }: { transitionState: any; onClose(): void; }) {
+function MassDeleterUI(props: RenderModalProps) {
     const manager = useManager();
 
     const [form, setForm] = useState<DeleterOptions>(() => {
@@ -271,165 +271,158 @@ function MassDeleterUI({ transitionState, onClose }: { transitionState: any; onC
     }, [manager.logs]);
 
     return (
-        <ModalRoot transitionState={transitionState} size={ModalSize.MEDIUM}>
-            <ModalHeader>
-                <Flex flexDirection="row" alignItems="center" justifyContent="space-between" style={{ width: "100%" }}>
-                    <Text variant="heading-lg/semibold">Mass Deleter</Text>
-                    <ModalCloseButton onClick={onClose} />
-                </Flex>
-            </ModalHeader>
-
-            <ModalContent style={{ padding: "20px" }}>
-                <div style={{ marginBottom: "15px" }}>
-                    <Forms.FormTitle tag="h5">Author ID</Forms.FormTitle>
-                    <Flex flexDirection="row" alignItems="center">
-                        <TextInput
-                            value={form.authorId}
-                            onChange={(v: string) => setForm(f => ({ ...f, authorId: v }))}
-                            placeholder="User ID whose messages to delete"
-                        />
-                        <Button
-                            variant="secondary"
-                            size="xs"
-                            onClick={() => setForm(f => ({ ...f, authorId: UserStore?.getCurrentUser()?.id ?? "" }))}
-                            style={{ marginLeft: "10px", flexShrink: 0 }}
-                        >me</Button>
-                    </Flex>
-                </div>
-
-                <div style={{ marginBottom: "15px" }}>
-                    <Forms.FormTitle tag="h5">Server ID</Forms.FormTitle>
-                    <Flex flexDirection="row" alignItems="center">
-                        <TextInput
-                            value={form.guildId}
-                            onChange={(v: string) => setForm(f => ({ ...f, guildId: v }))}
-                            placeholder='Guild ID, or "@me" for DMs'
-                        />
-                        <Button
-                            variant="secondary"
-                            size="xs"
-                            onClick={() => setForm(f => ({ ...f, guildId: SelectedGuildStore?.getGuildId() ?? "@me" }))}
-                            style={{ marginLeft: "10px", flexShrink: 0 }}
-                        >current</Button>
-                    </Flex>
-                </div>
-
-                <div style={{ marginBottom: "15px" }}>
-                    <Forms.FormTitle tag="h5">Channel ID</Forms.FormTitle>
-                    <Flex flexDirection="row" alignItems="center">
-                        <TextInput
-                            value={form.channelId}
-                            onChange={(v: string) => setForm(f => ({ ...f, channelId: v }))}
-                            placeholder="Channel ID (leave blank to search all channels in a server)"
-                        />
-                        <Button
-                            variant="secondary"
-                            size="xs"
-                            onClick={() => {
-                                const { channelId, guildId } = getChannelContext();
-                                setForm(f => ({ ...f, channelId, guildId }));
-                            }}
-                            style={{ marginLeft: "10px", flexShrink: 0 }}
-                        >current</Button>
-                    </Flex>
-                </div>
-
-                <div style={{ marginBottom: "15px" }}>
-                    <Forms.FormTitle tag="h5">Search Filter</Forms.FormTitle>
+        <Modal
+            {...props}
+            title="Mass Deleter"
+            size="md"
+            actions={[
+                {
+                    text: "Clear Log",
+                    variant: "secondary",
+                    onClick: () => manager.clearLogs()
+                },
+                manager.running
+                    ? {
+                        text: "Stop",
+                        variant: "secondary",
+                        onClick: () => manager.stop()
+                    }
+                    : {
+                        text: "Start Deleting",
+                        variant: "critical-primary",
+                        disabled: !form.channelId,
+                        onClick: () => { manager.start(form); }
+                    }
+            ]}
+        >
+            <div style={{ marginBottom: "15px" }}>
+                <Forms.FormTitle tag="h5">Author ID</Forms.FormTitle>
+                <Flex flexDirection="row" alignItems="center">
                     <TextInput
-                        value={form.searchQuery}
-                        onChange={(v: string) => setForm(f => ({ ...f, searchQuery: v }))}
-                        placeholder="Filter by text content (optional)"
+                        value={form.authorId}
+                        onChange={(v: string) => setForm(f => ({ ...f, authorId: v }))}
+                        placeholder="User ID whose messages to delete"
                     />
-                </div>
-
-                <div style={{ marginBottom: "15px" }}>
-                    <FormSwitch
-                        title="Include Pinned Messages"
-                        value={form.includePinned}
-                        onChange={(v: boolean) => setForm(f => ({ ...f, includePinned: v }))}
-                        hideBorder
-                    />
-                </div>
-
-                <Flex flexDirection="row" style={{ marginBottom: "15px" }}>
-                    <div style={{ flex: 1, marginRight: "10px" }}>
-                        <Forms.FormTitle tag="h5">Search Delay (ms)</Forms.FormTitle>
-                        <TextInput
-                            type="number"
-                            value={form.searchDelay.toString()}
-                            onChange={(v: string) => setForm(f => ({ ...f, searchDelay: parseInt(v) || 0 }))}
-                        />
-                    </div>
-                    <div style={{ flex: 1 }}>
-                        <Forms.FormTitle tag="h5">Delete Delay (ms)</Forms.FormTitle>
-                        <TextInput
-                            type="number"
-                            value={form.deleteDelay.toString()}
-                            onChange={(v: string) => setForm(f => ({ ...f, deleteDelay: parseInt(v) || 0 }))}
-                        />
-                    </div>
-                </Flex>
-
-                <div style={{
-                    backgroundColor: "var(--background-secondary-alt)",
-                    padding: "10px",
-                    borderRadius: "5px",
-                    height: "150px",
-                    overflowY: "auto",
-                    fontFamily: "monospace",
-                    fontSize: "12px",
-                    whiteSpace: "pre-wrap"
-                }}>
-                    {manager.logs.map((log, i) => <div key={i}>{log}</div>)}
-                    <div ref={logsEndRef} />
-                </div>
-
-                {manager.progress.total > 0 && (
-                    <div style={{ marginTop: "10px" }}>
-                        <Text variant="text-sm/normal">
-                            Progress: {manager.progress.current} / {manager.progress.total}
-                        </Text>
-                        <div style={{
-                            width: "100%",
-                            height: "4px",
-                            backgroundColor: "var(--background-modifier-accent)",
-                            borderRadius: "2px",
-                            marginTop: "5px"
-                        }}>
-                            <div style={{
-                                width: `${Math.min((manager.progress.current / manager.progress.total) * 100, 100)}%`,
-                                height: "100%",
-                                backgroundColor: "var(--brand-experiment)",
-                                borderRadius: "2px",
-                                transition: "width 0.3s ease"
-                            }} />
-                        </div>
-                    </div>
-                )}
-            </ModalContent>
-
-            <ModalFooter>
-                <Flex flexDirection="row" justifyContent="space-between" style={{ width: "100%" }}>
-                    {!manager.running ? (
-                        <Button
-                            variant="dangerPrimary"
-                            disabled={!form.channelId}
-                            onClick={() => { manager.start(form); }}
-                        >Start Deleting</Button>
-                    ) : (
-                        <Button
-                            variant="secondary"
-                            onClick={() => manager.stop()}
-                        >Stop</Button>
-                    )}
                     <Button
-                        variant="none"
-                        onClick={() => manager.clearLogs()}
-                    >Clear Log</Button>
+                        variant="secondary"
+                        size="xs"
+                        onClick={() => setForm(f => ({ ...f, authorId: UserStore?.getCurrentUser()?.id ?? "" }))}
+                        style={{ marginLeft: "10px", flexShrink: 0 }}
+                    >me</Button>
                 </Flex>
-            </ModalFooter>
-        </ModalRoot>
+            </div>
+
+            <div style={{ marginBottom: "15px" }}>
+                <Forms.FormTitle tag="h5">Server ID</Forms.FormTitle>
+                <Flex flexDirection="row" alignItems="center">
+                    <TextInput
+                        value={form.guildId}
+                        onChange={(v: string) => setForm(f => ({ ...f, guildId: v }))}
+                        placeholder='Guild ID, or "@me" for DMs'
+                    />
+                    <Button
+                        variant="secondary"
+                        size="xs"
+                        onClick={() => setForm(f => ({ ...f, guildId: SelectedGuildStore?.getGuildId() ?? "@me" }))}
+                        style={{ marginLeft: "10px", flexShrink: 0 }}
+                    >current</Button>
+                </Flex>
+            </div>
+
+            <div style={{ marginBottom: "15px" }}>
+                <Forms.FormTitle tag="h5">Channel ID</Forms.FormTitle>
+                <Flex flexDirection="row" alignItems="center">
+                    <TextInput
+                        value={form.channelId}
+                        onChange={(v: string) => setForm(f => ({ ...f, channelId: v }))}
+                        placeholder="Channel ID (leave blank to search all channels in a server)"
+                    />
+                    <Button
+                        variant="secondary"
+                        size="xs"
+                        onClick={() => {
+                            const { channelId, guildId } = getChannelContext();
+                            setForm(f => ({ ...f, channelId, guildId }));
+                        }}
+                        style={{ marginLeft: "10px", flexShrink: 0 }}
+                    >current</Button>
+                </Flex>
+            </div>
+
+            <div style={{ marginBottom: "15px" }}>
+                <Forms.FormTitle tag="h5">Search Filter</Forms.FormTitle>
+                <TextInput
+                    value={form.searchQuery}
+                    onChange={(v: string) => setForm(f => ({ ...f, searchQuery: v }))}
+                    placeholder="Filter by text content (optional)"
+                />
+            </div>
+
+            <div style={{ marginBottom: "15px" }}>
+                <FormSwitch
+                    title="Include Pinned Messages"
+                    value={form.includePinned}
+                    onChange={(v: boolean) => setForm(f => ({ ...f, includePinned: v }))}
+                    hideBorder
+                />
+            </div>
+
+            <Flex flexDirection="row" style={{ marginBottom: "15px" }}>
+                <div style={{ flex: 1, marginRight: "10px" }}>
+                    <Forms.FormTitle tag="h5">Search Delay (ms)</Forms.FormTitle>
+                    <TextInput
+                        type="number"
+                        value={form.searchDelay.toString()}
+                        onChange={(v: string) => setForm(f => ({ ...f, searchDelay: parseInt(v) || 0 }))}
+                    />
+                </div>
+                <div style={{ flex: 1 }}>
+                    <Forms.FormTitle tag="h5">Delete Delay (ms)</Forms.FormTitle>
+                    <TextInput
+                        type="number"
+                        value={form.deleteDelay.toString()}
+                        onChange={(v: string) => setForm(f => ({ ...f, deleteDelay: parseInt(v) || 0 }))}
+                    />
+                </div>
+            </Flex>
+
+            <div style={{
+                backgroundColor: "var(--background-secondary-alt)",
+                padding: "10px",
+                borderRadius: "5px",
+                height: "150px",
+                overflowY: "auto",
+                fontFamily: "monospace",
+                fontSize: "12px",
+                whiteSpace: "pre-wrap"
+            }}>
+                {manager.logs.map((log, i) => <div key={i}>{log}</div>)}
+                <div ref={logsEndRef} />
+            </div>
+
+            {manager.progress.total > 0 && (
+                <div style={{ marginTop: "10px" }}>
+                    <Text variant="text-sm/normal">
+                        Progress: {manager.progress.current} / {manager.progress.total}
+                    </Text>
+                    <div style={{
+                        width: "100%",
+                        height: "4px",
+                        backgroundColor: "var(--background-modifier-accent)",
+                        borderRadius: "2px",
+                        marginTop: "5px"
+                    }}>
+                        <div style={{
+                            width: `${Math.min((manager.progress.current / manager.progress.total) * 100, 100)}%`,
+                            height: "100%",
+                            backgroundColor: "var(--brand-experiment)",
+                            borderRadius: "2px",
+                            transition: "width 0.3s ease"
+                        }} />
+                    </div>
+                </div>
+            )}
+        </Modal>
     );
 }
 

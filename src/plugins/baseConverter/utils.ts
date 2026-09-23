@@ -271,13 +271,13 @@ export async function decodeWithError(
         let result: string;
         try {
             switch (target) {
-                case "binary":  result = decodeBinary(text);  break;
-                case "octal":   result = decodeOctal(text);   break;
+                case "binary": result = decodeBinary(text); break;
+                case "octal": result = decodeOctal(text); break;
                 case "decimal": result = decodeDecimal(text); break;
-                case "hex":     result = decodeHex(text);     break;
-                case "base32":  result = decodeBase32(text);  break;
-                case "base64":  result = decodeBase64(text);  break;
-                case "utf8":    result = decodeUtf8(text);    break;
+                case "hex": result = decodeHex(text); break;
+                case "base32": result = decodeBase32(text); break;
+                case "base64": result = decodeBase64(text); break;
+                case "utf8": result = decodeUtf8(text); break;
             }
         } catch (err) {
             return { ok: false, error: classifyError(err) };
@@ -304,12 +304,12 @@ export async function encode(
     encoding: EncodeTarget
 ): Promise<string> {
     switch (encoding) {
-        case "binary":  return encodeBinary(text);
-        case "octal":   return encodeOctal(text);
+        case "binary": return encodeBinary(text);
+        case "octal": return encodeOctal(text);
         case "decimal": return encodeDecimal(text);
-        case "hex":     return encodeHex(text);
-        case "base32":  return encodeBase32(text);
-        case "base64":  return encodeBase64(text);
-        case "utf8":    return encodeUtf8(text);
+        case "hex": return encodeHex(text);
+        case "base32": return encodeBase32(text);
+        case "base64": return encodeBase64(text);
+        case "utf8": return encodeUtf8(text);
     }
 }

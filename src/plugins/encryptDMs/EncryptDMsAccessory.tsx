@@ -21,8 +21,8 @@ import { Channel, Message } from "@vencord/discord-types";
 import { findCssClassesLazy } from "@webpack";
 import { ChannelStore, Parser, useEffect, useRef, UserStore, useState } from "@webpack/common";
 
-import { isEncryptedAttachmentName } from "./encryptedAttachment";
 import { EncryptDMsIcon } from "./EncryptDMsIcon";
+import { isEncryptedAttachmentName } from "./encryptedAttachment";
 import { EncryptedAttachments } from "./EncryptedAttachments";
 import { LinkPreviews } from "./LinkPreview";
 import { settings } from "./settings";

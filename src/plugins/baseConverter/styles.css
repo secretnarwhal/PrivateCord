@@ -1,15 +1,3 @@
-.vc-baseconv-modal-content {
-    padding: 1em;
-}
-
-.vc-baseconv-modal-header {
-    place-content: center space-between;
-}
-
-.vc-baseconv-modal-title {
-    margin: 0;
-}
-
 /* Flex row: converter icon in its own column, decoded text + meta stacked in the
    second column. Giving the accessory its own block row keeps the message's
    reaction row below the decoded text instead of overlapping it. */
@@ -24,6 +12,7 @@
 
 .vc-baseconv-accessory-icon {
     flex: 0 0 auto;
+
     /* Nudge the icon down so it lines up with the first line of text (cap height),
        instead of sitting on the descender line. */
     margin-top: 0.2em;

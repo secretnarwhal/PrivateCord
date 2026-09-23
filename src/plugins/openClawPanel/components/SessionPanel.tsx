@@ -6,9 +6,7 @@
 
 import { BaseText } from "@components/BaseText";
 import { Button } from "@components/Button";
-import { useCallback, useEffect, useState } from "@webpack/common";
-
-import { getCurrentSession, loadSessions, loadUsage, setFocusedKey, useOpenClawData } from "../dataStore";
+import { getCurrentSession, loadSessions, loadUsage, setFocusedKey, useOpenClawData } from "@plugins/openClawPanel/dataStore";
 import {
     cl,
     fetchModels,
@@ -27,7 +25,9 @@ import {
     patchSessionModel,
     resetSession,
     sessionToStatus
-} from "../utils";
+} from "@plugins/openClawPanel/utils";
+import { useCallback, useEffect, useState } from "@webpack/common";
+
 import { ChatView } from "./ChatView";
 
 // ── Reusable pieces ──────────────────────────────────────────────────────
