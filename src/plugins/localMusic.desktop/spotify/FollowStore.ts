@@ -9,7 +9,8 @@ import {
     DRIFT_HARD_SEEK, DRIFT_NUDGE_MIN, DRIFT_TICK_MS, MAX_RATE_NUDGE
 } from "@plugins/localMusic.desktop/session/protocol";
 import { settings } from "@plugins/localMusic.desktop/settings";
-import { Toasts, useEffect, useReducer } from "@webpack/common";
+import type { ToastType } from "@vencord/discord-types";
+import { showToast, useEffect, useReducer } from "@webpack/common";
 
 import { findMatch } from "./match";
 import {
@@ -54,8 +55,8 @@ const START_GRACE_MS = 2_500;
 const listeners = new Set<() => void>();
 const notify = () => listeners.forEach(l => l());
 
-function toast(message: string, type = Toasts.Type.MESSAGE) {
-    Toasts.show({ message, id: Toasts.genId(), type });
+function toast(message: string, type: ToastType = "message") {
+    showToast(message, type);
 }
 
 class FollowStore {
@@ -109,10 +110,10 @@ class FollowStore {
 
     follow(userId: string) {
         if (store.session)
-            return toast("Leave the listen-along session first — it already drives playback", Toasts.Type.FAILURE);
+            return toast("Leave the listen-along session first — it already drives playback", "failure");
 
         if (!store.folder)
-            return toast("Choose your music folder in the library first", Toasts.Type.FAILURE);
+            return toast("Choose your music folder in the library first", "failure");
 
         if (this.userId === userId) return;
         if (this.userId) this.teardown();

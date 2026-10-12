@@ -23,7 +23,7 @@ import { findGroupChildrenByChildId, NavContextMenuPatchCallback } from "@api/Co
 import { addMessagePreSendListener, MessageSendListener, removeMessagePreSendListener } from "@api/MessageEvents";
 import definePlugin from "@utils/types";
 import { Message } from "@vencord/discord-types";
-import { Menu, showToast, Toasts } from "@webpack/common";
+import { Menu, showToast } from "@webpack/common";
 
 import { InvisibleMessagesAccessory } from "./InvisibleMessagesAccessory";
 import { InvisibleMessagesChatBarIcon, InvisibleMessagesIcon } from "./InvisibleMessagesIcon";
@@ -45,7 +45,7 @@ const presendListener: MessageSendListener = async (channelId, messageObj) => {
 
     const cover = messageObj.content;
     if (cover.split(" ").filter(Boolean).length < 2) {
-        showToast("Your message needs at least 2 words to hide a secret inside it", Toasts.Type.FAILURE);
+        showToast("Your message needs at least 2 words to hide a secret inside it", "failure");
         return { cancel: true };
     }
 
@@ -55,7 +55,7 @@ const presendListener: MessageSendListener = async (channelId, messageObj) => {
         setSecretDraft(channelId, "");
     } catch (e) {
         logger.error("Failed to hide secret from the reveal-mode chatbar", e);
-        showToast("Failed to hide the secret message", Toasts.Type.FAILURE);
+        showToast("Failed to hide the secret message", "failure");
         return { cancel: true };
     }
 };

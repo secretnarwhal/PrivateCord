@@ -17,7 +17,7 @@ import {
 import { insertTextIntoChatInputBox, sendMessage } from "@utils/discord";
 import { classes } from "@utils/misc";
 import {
-    ExpressionPickerStore, React, SelectedChannelStore, Toasts, Tooltip,
+    ExpressionPickerStore, React, SelectedChannelStore, showToast, Tooltip,
     useCallback, useEffect, useMemo, useRef, useState
 } from "@webpack/common";
 import type { CSSProperties, DragEvent, KeyboardEvent, MouseEvent, ReactNode } from "react";
@@ -265,7 +265,7 @@ export function Explorer({ store, variant, onSelectGif, className }: ExplorerPro
         }
         const channelId = SelectedChannelStore.getChannelId();
         if (!channelId) {
-            Toasts.show({ message: "Open a channel first!", type: Toasts.Type.FAILURE, id: Toasts.genId() });
+            showToast("Open a channel first!", "failure");
             return;
         }
         sendMessage(channelId, { content: gif.url }, false);

@@ -6,7 +6,7 @@
 
 import { sendMessage } from "@utils/discord";
 import { Logger } from "@utils/Logger";
-import { showToast, Toasts } from "@webpack/common";
+import { showToast } from "@webpack/common";
 
 import { armGhost, consumeRepeaterSend, disarmGhost, markRepeaterSend } from "./ghost";
 import { GhostPreset, MIN_INTERVAL_MS } from "./types";
@@ -148,7 +148,7 @@ async function tick(job: RepeatJob) {
 
         if (job.failures >= MAX_CONSECUTIVE_FAILURES) {
             stopRepeat(job.key);
-            showToast(`Stopped repeating "${job.presetName}" after ${MAX_CONSECUTIVE_FAILURES} failed sends.`, Toasts.Type.FAILURE);
+            showToast(`Stopped repeating "${job.presetName}" after ${MAX_CONSECUTIVE_FAILURES} failed sends.`, "failure");
             return;
         }
     }
@@ -158,7 +158,7 @@ async function tick(job: RepeatJob) {
 
     if (job.maxSends > 0 && job.sent >= job.maxSends) {
         stopRepeat(job.key);
-        showToast(`Finished repeating "${job.presetName}".`, Toasts.Type.SUCCESS);
+        showToast(`Finished repeating "${job.presetName}".`, "success");
         return;
     }
 

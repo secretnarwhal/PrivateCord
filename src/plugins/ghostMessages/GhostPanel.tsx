@@ -21,7 +21,6 @@ import {
     showToast,
     TextArea,
     TextInput,
-    Toasts,
     useEffect,
     UserStore,
     useState } from "@webpack/common";
@@ -233,7 +232,7 @@ function PresetCard({ preset, onPatch, onDuplicate, onDelete }: PresetEditProps 
                                     disabled={!channelId}
                                     onClick={() => {
                                         const error = startRepeat(preset, channelId);
-                                        if (error) showToast(error, Toasts.Type.FAILURE);
+                                        if (error) showToast(error, "failure");
                                     }}
                                 >
                                     Start in {channelId ? channelLabel(channelId) : "this channel"}

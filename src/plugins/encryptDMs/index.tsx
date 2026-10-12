@@ -22,7 +22,7 @@ import { findGroupChildrenByChildId, NavContextMenuPatchCallback } from "@api/Co
 import { MessageObject, SendMessageProps } from "@api/MessageEvents";
 import definePlugin from "@utils/types";
 import { Channel, CloudUpload, Message, User } from "@vencord/discord-types";
-import { ChannelStore, Menu, showToast, Toasts, UserStore } from "@webpack/common";
+import { ChannelStore, Menu, showToast, UserStore } from "@webpack/common";
 
 import { EncryptDMsAccessory, handleDecode, resolveAesKey } from "./EncryptDMsAccessory";
 import { EncryptDMsChatBarIcon, EncryptDMsIcon, scheduleAutoEncodeTooltipHide, setAutoEncodeTooltip } from "./EncryptDMsIcon";
@@ -56,7 +56,7 @@ async function triggerManualDecode(message: Message) {
     if (result) {
         handleDecode(message.id, result);
     } else {
-        showToast("Could not decrypt this message. Check your shared secret or per-user key.", Toasts.Type.FAILURE);
+        showToast("Could not decrypt this message. Check your shared secret or per-user key.", "failure");
     }
 }
 
@@ -141,7 +141,7 @@ async function computeOutgoingEncoding(channelId: string, content: string): Prom
         if (hasMatchingKey || (!isPrivate && Object.keys(allKeys).length > 0)) {
             showToast(
                 "Message not sent: per-user AES keys don't apply in group DMs or servers. Set a global shared secret in EncryptDMs settings or disable auto-encrypt.",
-                Toasts.Type.FAILURE
+                "failure"
             );
             return { kind: "refuse" };
         }
@@ -158,7 +158,7 @@ async function computeOutgoingEncoding(channelId: string, content: string): Prom
     if (!hasUserKey && !settings.store.autoEncodeOutgoing) return { kind: "skip" };
 
     if (!aesKey) {
-        showToast("Set a shared AES secret in the EncryptDMs settings before sending.", Toasts.Type.FAILURE);
+        showToast("Set a shared AES secret in the EncryptDMs settings before sending.", "failure");
         return { kind: "skip" };
     }
 
@@ -214,11 +214,11 @@ async function handleBeforeSend(channelId: string, message: MessageObject, props
 
     if (settings.store.encryptAttachments) {
         // The send hook no longer receives the upload list, so refuse rather than upload plaintext.
-        showToast("Message not sent: attachments can't be encrypted right now. Remove them or disable 'Encrypt attachments'.", Toasts.Type.FAILURE);
+        showToast("Message not sent: attachments can't be encrypted right now. Remove them or disable 'Encrypt attachments'.", "failure");
         return { cancel: true };
     } else if (!attachmentWarnSeen.has(channelId)) {
         attachmentWarnSeen.add(channelId);
-        showToast("Attachments are not encrypted — only message text. Enable 'Encrypt attachments' in EncryptDMs settings.", Toasts.Type.MESSAGE);
+        showToast("Attachments are not encrypted — only message text. Enable 'Encrypt attachments' in EncryptDMs settings.", "message");
     }
 }
 

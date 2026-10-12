@@ -22,7 +22,7 @@ import { findGroupChildrenByChildId, NavContextMenuPatchCallback } from "@api/Co
 import { MessageObject } from "@api/MessageEvents";
 import definePlugin from "@utils/types";
 import { Message } from "@vencord/discord-types";
-import { ChannelStore, Menu, showToast, Toasts } from "@webpack/common";
+import { ChannelStore, Menu, showToast } from "@webpack/common";
 
 import { BaseConverterAccessory, handleDecode } from "./BaseConverterAccessory";
 import { BaseConverterChatBarIcon, BaseConverterIcon, scheduleAutoEncodeTooltipHide, setAutoEncodeTooltip } from "./BaseConverterIcon";
@@ -45,7 +45,7 @@ async function triggerManualDecode(message: Message) {
     if (result) {
         handleDecode(message.id, result);
     } else {
-        showToast("Could not decode this message. Check the encoding setting.", Toasts.Type.FAILURE);
+        showToast("Could not decode this message. Check the encoding setting.", "failure");
     }
 }
 

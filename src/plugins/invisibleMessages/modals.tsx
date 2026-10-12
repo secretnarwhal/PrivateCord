@@ -19,7 +19,7 @@
 import { sendMessage } from "@utils/discord";
 import { Margins } from "@utils/margins";
 import { Message, RenderModalProps } from "@vencord/discord-types";
-import { Forms, Modal, openModal, SelectedChannelStore, showToast, Toasts, useRef } from "@webpack/common";
+import { Forms, Modal, openModal, SelectedChannelStore, showToast, useRef } from "@webpack/common";
 
 import { setForcedReveal } from "./revealState";
 import { decrypt, encrypt } from "./stegcloak";
@@ -36,7 +36,7 @@ function ComposeModal({ modalProps, channelId }: { modalProps: RenderModalProps;
     const send = async () => {
         const targetChannelId = channelId || SelectedChannelStore.getChannelId();
         if (!targetChannelId) {
-            showToast("Open a chat first", Toasts.Type.FAILURE);
+            showToast("Open a chat first", "failure");
             return;
         }
 
@@ -45,11 +45,11 @@ function ComposeModal({ modalProps, channelId }: { modalProps: RenderModalProps;
         const passwordInput = (passwordRef.current?.value ?? "").trim();
 
         if (cover.split(" ").length < 2) {
-            showToast("The visible message must contain at least 2 words", Toasts.Type.FAILURE);
+            showToast("The visible message must contain at least 2 words", "failure");
             return;
         }
         if (!hidden) {
-            showToast("Enter a hidden message", Toasts.Type.FAILURE);
+            showToast("Enter a hidden message", "failure");
             return;
         }
 
@@ -60,7 +60,7 @@ function ComposeModal({ modalProps, channelId }: { modalProps: RenderModalProps;
             modalProps.onClose();
         } catch (e) {
             logger.error("Failed to compose invisible message", e);
-            showToast("Failed to create invisible message", Toasts.Type.FAILURE);
+            showToast("Failed to create invisible message", "failure");
         }
     };
 
@@ -137,7 +137,7 @@ function SetPasswordModal({ modalProps }: { modalProps: RenderModalProps; }) {
         await setPermanentPassword(value);
         showToast(
             value ? "Password saved" : "Password cleared — using channel / default password",
-            Toasts.Type.SUCCESS
+            "success"
         );
         modalProps.onClose();
     };
@@ -270,6 +270,6 @@ export async function revealInvisibleMessage(message: Message) {
         setForcedReveal(message.id, text);
     } catch (e) {
         logger.error("Failed to decrypt invisible message", e);
-        showToast("Could not decrypt — wrong password?", Toasts.Type.FAILURE);
+        showToast("Could not decrypt — wrong password?", "failure");
     }
 }

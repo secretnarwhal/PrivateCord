@@ -7,7 +7,8 @@
 import { store } from "@plugins/localMusic.desktop/PlayerStore";
 import { settings } from "@plugins/localMusic.desktop/settings";
 import { PluginNative } from "@utils/types";
-import { Toasts, useEffect, useReducer, UserStore } from "@webpack/common";
+import type { ToastType } from "@vencord/discord-types";
+import { showToast, useEffect, useReducer, UserStore } from "@webpack/common";
 
 import { deriveAesKey, generateGroupKey, parseGroupKey, randomHex, sha256Hex } from "./crypto";
 import { HostSender, ListenerReceiver } from "./FileTransfer";
@@ -66,8 +67,8 @@ function permFor(action: RequestAction): keyof MemberPerms {
     }
 }
 
-function toast(message: string, type = Toasts.Type.MESSAGE) {
-    Toasts.show({ message, id: Toasts.genId(), type });
+function toast(message: string, type: ToastType = "message") {
+    showToast(message, type);
 }
 
 interface HostPeerState {
@@ -801,7 +802,7 @@ class SessionStore {
         if (this.reconnectAttempt >= RECONNECT_DELAYS.length) {
             this.error = "Lost the connection to the host";
             this.teardown();
-            toast("Listen along: lost the connection to the host", Toasts.Type.FAILURE);
+            toast("Listen along: lost the connection to the host", "failure");
             return;
         }
 
@@ -856,7 +857,7 @@ class SessionStore {
                 break;
 
             case "deny":
-                toast(msg.reason, Toasts.Type.FAILURE);
+                toast(msg.reason, "failure");
                 break;
 
             case "file-offer":
@@ -866,7 +867,7 @@ class SessionStore {
             case "kick":
                 this.leaving = true;
                 this.teardown();
-                toast("The host removed you from the listening session", Toasts.Type.FAILURE);
+                toast("The host removed you from the listening session", "failure");
                 return;
 
             case "end":
@@ -1035,7 +1036,7 @@ class SessionStore {
         if (this.role !== "listener" || !this.hostUserId) return;
 
         if (!this.myPerms[permFor(action)]) {
-            toast("The host hasn't given you permission to do that", Toasts.Type.FAILURE);
+            toast("The host hasn't given you permission to do that", "failure");
             return;
         }
 

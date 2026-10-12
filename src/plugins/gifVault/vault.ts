@@ -6,7 +6,7 @@
 
 import { get as dsGet, set as dsSet } from "@api/DataStore";
 import { Logger } from "@utils/Logger";
-import { Toasts, useEffect, useMemo, UserSettingsActionCreators, UserSettingsProtoStore, useState, useStateFromStores } from "@webpack/common";
+import { showToast, useEffect, useMemo, UserSettingsActionCreators, UserSettingsProtoStore, useState, useStateFromStores } from "@webpack/common";
 
 import { settings } from "./settings";
 
@@ -323,10 +323,10 @@ export function removeFavorite(url: string) {
         creators.updateAsync("favoriteGifs", (favoriteGifs: any) => {
             if (favoriteGifs?.gifs?.[url] != null) delete favoriteGifs.gifs[url];
         }, 0);
-        Toasts.show({ message: "Removed from favorites", type: Toasts.Type.SUCCESS, id: Toasts.genId() });
+        showToast("Removed from favorites", "success");
     } catch (e) {
         logger.error("Failed to remove favorite", e);
-        Toasts.show({ message: "Failed to remove favorite", type: Toasts.Type.FAILURE, id: Toasts.genId() });
+        showToast("Failed to remove favorite", "failure");
     }
 }
 
