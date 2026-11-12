@@ -148,7 +148,7 @@ async function tick(job: RepeatJob) {
 
         if (job.failures >= MAX_CONSECUTIVE_FAILURES) {
             stopRepeat(job.key);
-            showToast(`Stopped repeating "${job.presetName}" after ${MAX_CONSECUTIVE_FAILURES} failed sends.`, "failure");
+            showToast({ text: `Stopped repeating "${job.presetName}" after ${MAX_CONSECUTIVE_FAILURES} failed sends.`, variant: "critical" });
             return;
         }
     }
@@ -158,7 +158,7 @@ async function tick(job: RepeatJob) {
 
     if (job.maxSends > 0 && job.sent >= job.maxSends) {
         stopRepeat(job.key);
-        showToast(`Finished repeating "${job.presetName}".`, "success");
+        showToast({ text: `Finished repeating "${job.presetName}".`, variant: "success" });
         return;
     }
 

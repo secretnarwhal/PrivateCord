@@ -77,7 +77,10 @@
     background: none;
     color: var(--interactive-icon-default);
     cursor: pointer;
-    transition: color 0.15s ease, background-color 0.15s ease, transform 0.15s ease;
+    transition:
+        color 0.15s ease,
+        background-color 0.15s ease,
+        transform 0.15s ease;
 }
 
 .vc-lm-button:active {
@@ -131,8 +134,16 @@
    of plain black, for tracks with no cover art to blur */
 .vc-lm-mode-viz {
     background:
-        radial-gradient(120% 90% at 85% -10%, color-mix(in oklab, var(--vc-lm-accent) 30%, transparent), transparent 60%),
-        radial-gradient(130% 100% at 0% 115%, color-mix(in oklab, var(--vc-lm-accent) 18%, transparent), transparent 55%),
+        radial-gradient(
+            120% 90% at 85% -10%,
+            color-mix(in oklab, var(--vc-lm-accent) 30%, transparent),
+            transparent 60%
+        ),
+        radial-gradient(
+            130% 100% at 0% 115%,
+            color-mix(in oklab, var(--vc-lm-accent) 18%, transparent),
+            transparent 55%
+        ),
         linear-gradient(160deg, #14141c, #0a0a10 70%);
 }
 
@@ -500,7 +511,9 @@
     box-shadow: 0 1px 4px rgb(0 0 0 / 40%);
     opacity: 0;
     scale: 0.5;
-    transition: opacity 0.1s ease, scale 0.1s ease;
+    transition:
+        opacity 0.1s ease,
+        scale 0.1s ease;
 }
 
 .vc-lm-progress-scrubbing .vc-lm-progress-fill::after,
@@ -540,7 +553,9 @@
     padding-block-end: 4px;
     opacity: 0;
     visibility: hidden;
-    transition: opacity 0.1s ease, visibility 0.1s;
+    transition:
+        opacity 0.1s ease,
+        visibility 0.1s;
 }
 
 /* dragging keeps it open: pointer capture lets the drag wander off the popup */
@@ -658,7 +673,9 @@
     background: rgb(255 255 255 / 5%);
     box-shadow: inset 0 0 0 1px rgb(255 255 255 / 8%);
     color: #e6e6ec;
-    transition: box-shadow 0.15s ease, background-color 0.15s ease;
+    transition:
+        box-shadow 0.15s ease,
+        background-color 0.15s ease;
 }
 
 .vc-lm-modal input:focus {
@@ -712,7 +729,11 @@
     border-radius: 14px;
     overflow: hidden;
     background:
-        radial-gradient(130% 170% at 0% 0%, color-mix(in oklab, var(--vc-lm-accent) 26%, transparent), transparent 60%),
+        radial-gradient(
+            130% 170% at 0% 0%,
+            color-mix(in oklab, var(--vc-lm-accent) 26%, transparent),
+            transparent 60%
+        ),
         linear-gradient(160deg, #191922, #101016);
     box-shadow: inset 0 0 0 1px rgb(255 255 255 / 7%);
 }
@@ -887,7 +908,10 @@
     font-size: 13px;
     font-weight: 600;
     cursor: pointer;
-    transition: color 0.15s ease, background-color 0.15s ease, box-shadow 0.15s ease;
+    transition:
+        color 0.15s ease,
+        background-color 0.15s ease,
+        box-shadow 0.15s ease;
 }
 
 .vc-lm-tab:hover {
@@ -1068,7 +1092,9 @@
     font-size: 11px;
     line-height: 1;
     cursor: pointer;
-    transition: background-color 0.12s ease, color 0.12s ease;
+    transition:
+        background-color 0.12s ease,
+        color 0.12s ease;
 }
 
 .vc-lm-dl-dismiss:hover {
@@ -1108,8 +1134,13 @@
 }
 
 @keyframes vc-lm-dl-pulse {
-    0%, 100% { opacity: 0.25; }
-    50% { opacity: 0.8; }
+    0%,
+    100% {
+        opacity: 0.25;
+    }
+    50% {
+        opacity: 0.8;
+    }
 }
 
 .vc-lm-dl-thumb {
@@ -1130,7 +1161,8 @@
     border-radius: 5px;
     background: color-mix(in oklab, var(--vc-lm-accent, var(--brand-500)) 16%, transparent);
     color: color-mix(in oklab, var(--vc-lm-accent, var(--brand-500)) 55%, #fff);
-    box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--vc-lm-accent, var(--brand-500)) 30%, transparent);
+    box-shadow: inset 0 0 0 1px
+        color-mix(in oklab, var(--vc-lm-accent, var(--brand-500)) 30%, transparent);
     flex: 0 0 auto;
 }
 
@@ -1336,7 +1368,10 @@
     background-image: linear-gradient(
         90deg,
         var(--vc-lm-lyric-on) 0%,
-        var(--vc-lm-lyric-on) calc(var(--vc-lm-word-p) * (100% + var(--vc-lm-word-feather)) - var(--vc-lm-word-feather)),
+        var(--vc-lm-lyric-on)
+            calc(
+                var(--vc-lm-word-p) * (100% + var(--vc-lm-word-feather)) - var(--vc-lm-word-feather)
+            ),
         var(--vc-lm-lyric-off) calc(var(--vc-lm-word-p) * (100% + var(--vc-lm-word-feather))),
         var(--vc-lm-lyric-off) 100%
     );
@@ -1596,7 +1631,9 @@
     font-size: 12px;
     line-height: 1;
     cursor: pointer;
-    transition: background-color 0.12s ease, color 0.12s ease;
+    transition:
+        background-color 0.12s ease,
+        color 0.12s ease;
 }
 
 .vc-lm-tool-edit:hover {
@@ -1660,8 +1697,12 @@
 }
 
 @keyframes vc-lm-tool-fade {
-    from { opacity: 0; }
-    to { opacity: 1; }
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
 }
 
 .vc-lm-tool-console {
@@ -1673,7 +1714,9 @@
     padding: 12px;
     border-radius: 12px;
     background: var(--background-secondary, #2b2d31);
-    box-shadow: 0 8px 32px rgb(0 0 0 / 45%), inset 0 0 0 1px rgb(255 255 255 / 8%);
+    box-shadow:
+        0 8px 32px rgb(0 0 0 / 45%),
+        inset 0 0 0 1px rgb(255 255 255 / 8%);
 }
 
 .vc-lm-tool-console-head {
@@ -1794,7 +1837,10 @@
     overflow: hidden;
     text-overflow: ellipsis;
     cursor: pointer;
-    transition: color 0.12s ease, background-color 0.12s ease, box-shadow 0.12s ease;
+    transition:
+        color 0.12s ease,
+        background-color 0.12s ease,
+        box-shadow 0.12s ease;
 }
 
 .vc-lm-crumb:hover,
@@ -1910,7 +1956,9 @@
     padding: 8px;
     border-radius: 12px;
     cursor: pointer;
-    transition: background-color 0.12s ease, box-shadow 0.12s ease;
+    transition:
+        background-color 0.12s ease,
+        box-shadow 0.12s ease;
 }
 
 .vc-lm-tile:hover {
@@ -1969,7 +2017,9 @@
     opacity: 0;
     transform: translateY(4px);
     cursor: pointer;
-    transition: opacity 0.12s ease, transform 0.12s ease;
+    transition:
+        opacity 0.12s ease,
+        transform 0.12s ease;
     box-shadow: 0 4px 12px rgb(0 0 0 / 45%);
 }
 

@@ -7,7 +7,7 @@
 import { store } from "@plugins/localMusic.desktop/PlayerStore";
 import { settings } from "@plugins/localMusic.desktop/settings";
 import { PluginNative } from "@utils/types";
-import type { ToastType } from "@vencord/discord-types";
+import type { ToastVariant } from "@vencord/discord-types";
 import { showToast, useEffect, useReducer, UserStore } from "@webpack/common";
 
 import { deriveAesKey, generateGroupKey, parseGroupKey, randomHex, sha256Hex } from "./crypto";
@@ -67,8 +67,8 @@ function permFor(action: RequestAction): keyof MemberPerms {
     }
 }
 
-function toast(message: string, type: ToastType = "message") {
-    showToast(message, type);
+function toast(text: string, variant: ToastVariant = "default") {
+    showToast({ text, variant });
 }
 
 interface HostPeerState {
@@ -802,7 +802,7 @@ class SessionStore {
         if (this.reconnectAttempt >= RECONNECT_DELAYS.length) {
             this.error = "Lost the connection to the host";
             this.teardown();
-            toast("Listen along: lost the connection to the host", "failure");
+            toast("Listen along: lost the connection to the host", "critical");
             return;
         }
 
@@ -857,7 +857,7 @@ class SessionStore {
                 break;
 
             case "deny":
-                toast(msg.reason, "failure");
+                toast(msg.reason, "critical");
                 break;
 
             case "file-offer":
@@ -867,7 +867,7 @@ class SessionStore {
             case "kick":
                 this.leaving = true;
                 this.teardown();
-                toast("The host removed you from the listening session", "failure");
+                toast("The host removed you from the listening session", "critical");
                 return;
 
             case "end":
@@ -1036,7 +1036,7 @@ class SessionStore {
         if (this.role !== "listener" || !this.hostUserId) return;
 
         if (!this.myPerms[permFor(action)]) {
-            toast("The host hasn't given you permission to do that", "failure");
+            toast("The host hasn't given you permission to do that", "critical");
             return;
         }
 

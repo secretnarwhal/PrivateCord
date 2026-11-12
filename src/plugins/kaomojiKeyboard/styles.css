@@ -68,7 +68,9 @@
     font-size: 13px;
     font-family: inherit;
     outline: none;
-    transition: box-shadow 0.15s ease, background-color 0.15s ease;
+    transition:
+        box-shadow 0.15s ease,
+        background-color 0.15s ease;
 }
 
 .vc-kmj-search-input:focus {
@@ -96,7 +98,9 @@
     background: rgb(255 255 255 / 8%);
     color: rgb(255 255 255 / 55%);
     cursor: pointer;
-    transition: background-color 0.12s ease, color 0.12s ease;
+    transition:
+        background-color 0.12s ease,
+        color 0.12s ease;
 }
 
 .vc-kmj-search-clear:hover {
@@ -137,7 +141,10 @@
     font-family: inherit;
     white-space: nowrap;
     cursor: pointer;
-    transition: color 0.15s ease, background-color 0.15s ease, box-shadow 0.15s ease;
+    transition:
+        color 0.15s ease,
+        background-color 0.15s ease,
+        box-shadow 0.15s ease;
 }
 
 .vc-kmj-cat:hover {
@@ -230,7 +237,9 @@
     font-weight: 600;
     font-family: inherit;
     cursor: pointer;
-    transition: background-color 0.12s ease, color 0.12s ease;
+    transition:
+        background-color 0.12s ease,
+        color 0.12s ease;
 }
 
 .vc-kmj-section-action:hover {
@@ -268,7 +277,11 @@
     overflow: hidden;
     text-overflow: ellipsis;
     cursor: pointer;
-    transition: background-color 0.12s ease, color 0.12s ease, transform 0.12s ease, box-shadow 0.12s ease;
+    transition:
+        background-color 0.12s ease,
+        color 0.12s ease,
+        transform 0.12s ease,
+        box-shadow 0.12s ease;
 }
 
 .vc-kmj-tile-face:hover {
@@ -300,7 +313,9 @@
     cursor: pointer;
     opacity: 0;
     transform: scale(0.7);
-    transition: opacity 0.12s ease, transform 0.12s ease;
+    transition:
+        opacity 0.12s ease,
+        transform 0.12s ease;
 }
 
 .vc-kmj-tile-custom:hover .vc-kmj-tile-remove,
@@ -359,7 +374,9 @@
     font-family: inherit;
     cursor: pointer;
     box-shadow: 0 3px 12px color-mix(in oklab, var(--vc-kmj-accent) 45%, transparent);
-    transition: filter 0.12s ease, transform 0.12s ease;
+    transition:
+        filter 0.12s ease,
+        transform 0.12s ease;
 }
 
 .vc-kmj-add:hover {
@@ -424,7 +441,11 @@
     padding: 22px 24px;
     border-radius: 16px;
     background:
-        radial-gradient(120% 140% at 50% -20%, color-mix(in oklab, var(--vc-kmj-accent) 22%, transparent), transparent 65%),
+        radial-gradient(
+            120% 140% at 50% -20%,
+            color-mix(in oklab, var(--vc-kmj-accent) 22%, transparent),
+            transparent 65%
+        ),
         linear-gradient(160deg, #1c1c26, #131319);
     box-shadow:
         0 16px 40px rgb(0 0 0 / 45%),

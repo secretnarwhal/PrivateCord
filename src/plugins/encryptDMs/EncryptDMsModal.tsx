@@ -18,9 +18,11 @@
 
 import { Divider } from "@components/Divider";
 import { FormSwitch } from "@components/FormSwitch";
+import { Heading } from "@components/Heading";
+import { Paragraph } from "@components/Paragraph";
 import { Margins } from "@utils/margins";
 import { RenderModalProps } from "@vencord/discord-types";
-import { Forms, Modal, openModal, useEffect, useRef, UserStore, useState } from "@webpack/common";
+import { Modal, openModal, useEffect, useRef, UserStore, useState } from "@webpack/common";
 
 import { settings } from "./settings";
 import { openUserKeyModal } from "./UserKeyModal";
@@ -41,12 +43,12 @@ function AesSecretInput() {
 
     return (
         <section className={Margins.bottom16}>
-            <Forms.FormTitle tag="h3">Shared AES-256-GCM Secret Key</Forms.FormTitle>
-            <Forms.FormText className={Margins.bottom8}>
+            <Heading className={Margins.bottom8}>Shared AES-256-GCM Secret Key</Heading>
+            <Paragraph className={Margins.bottom8}>
                 Both users must enter the <strong>exact same key</strong> to encrypt and decrypt each other's messages.
                 Encryption and decryption happen locally on your device.
                 Stored in plain text in your Vencord settings — if you have settings sync enabled, this key will be included in that sync.
-            </Forms.FormText>
+            </Paragraph>
             <div className={cl("secret-row")}>
                 <input
                     ref={inputRef}
@@ -113,10 +115,10 @@ function UserKeysSection() {
         <>
             <Divider className={Margins.bottom16} />
             <section className={Margins.bottom16}>
-                <Forms.FormTitle tag="h3">Per-User AES Keys</Forms.FormTitle>
-                <Forms.FormText className={Margins.bottom8}>
+                <Heading className={Margins.bottom8}>Per-User AES Keys</Heading>
+                <Paragraph className={Margins.bottom8}>
                     These keys override the global secret for specific users. Right-click a user to add or update a key.
-                </Forms.FormText>
+                </Paragraph>
                 {entries.map(([userId]) => {
                     const username = UserStore.getUser(userId)?.username ?? userId;
                     return (

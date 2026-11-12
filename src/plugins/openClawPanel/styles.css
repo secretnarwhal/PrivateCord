@@ -123,7 +123,9 @@
     background: transparent;
     color: var(--interactive-normal, #b5bac1);
     cursor: pointer;
-    transition: background 0.15s ease, color 0.15s ease;
+    transition:
+        background 0.15s ease,
+        color 0.15s ease;
 }
 
 .vc-openclaw-dock-close:hover {
@@ -273,7 +275,8 @@
 }
 
 @keyframes vc-openclaw-pulse {
-    0%, 100% {
+    0%,
+    100% {
         opacity: 0.4;
         transform: scale(1);
     }
@@ -379,12 +382,20 @@
     animation: vc-openclaw-bounce 1.4s ease-in-out infinite;
 }
 
-.vc-openclaw-chat-typing-dot:nth-child(1) { animation-delay: 0s; }
-.vc-openclaw-chat-typing-dot:nth-child(2) { animation-delay: 0.2s; }
-.vc-openclaw-chat-typing-dot:nth-child(3) { animation-delay: 0.4s; }
+.vc-openclaw-chat-typing-dot:nth-child(1) {
+    animation-delay: 0s;
+}
+.vc-openclaw-chat-typing-dot:nth-child(2) {
+    animation-delay: 0.2s;
+}
+.vc-openclaw-chat-typing-dot:nth-child(3) {
+    animation-delay: 0.4s;
+}
 
 @keyframes vc-openclaw-bounce {
-    0%, 60%, 100% {
+    0%,
+    60%,
+    100% {
         transform: translateY(0);
         opacity: 0.4;
     }
@@ -477,7 +488,9 @@
     color: #fff;
     cursor: pointer;
     flex: 0 0 auto;
-    transition: background 0.15s ease, opacity 0.15s ease;
+    transition:
+        background 0.15s ease,
+        opacity 0.15s ease;
 }
 
 .vc-openclaw-chat-send-btn:disabled {
@@ -602,7 +615,9 @@
     flex-direction: column;
     gap: 3px;
     cursor: pointer;
-    transition: background 0.15s ease, border-color 0.15s ease;
+    transition:
+        background 0.15s ease,
+        border-color 0.15s ease;
 }
 
 .vc-openclaw-session-row:hover {

@@ -200,7 +200,7 @@ function SecondaryChatBar({ channelId }: { channelId: string; }) {
         const markup = (DraftStore.getDraft(channelId, DraftType.ChannelMessage) ?? "").trim();
         const cover = markup || (editable?.textContent ?? "").trim();
         if (cover.split(" ").filter(Boolean).length < 2) {
-            showToast("Type a normal message (2+ words) in the chat box below — it becomes the visible cover your secret hides inside", "failure");
+            showToast({ text: "Type a normal message (2+ words) in the chat box below — it becomes the visible cover your secret hides inside", variant: "critical" });
             // Drop the cursor into the real chatbox so they can write that cover
             // immediately, instead of feeling stuck typing into a bar that won't send.
             editable?.focus();
@@ -208,7 +208,7 @@ function SecondaryChatBar({ channelId }: { channelId: string; }) {
         }
 
         if (!editable) {
-            showToast("Couldn't find the chat box to send from", "failure");
+            showToast({ text: "Couldn't find the chat box to send from", variant: "critical" });
             return;
         }
 

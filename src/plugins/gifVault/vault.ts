@@ -323,10 +323,10 @@ export function removeFavorite(url: string) {
         creators.updateAsync("favoriteGifs", (favoriteGifs: any) => {
             if (favoriteGifs?.gifs?.[url] != null) delete favoriteGifs.gifs[url];
         }, 0);
-        showToast("Removed from favorites", "success");
+        showToast({ text: "Removed from favorites", variant: "success" });
     } catch (e) {
         logger.error("Failed to remove favorite", e);
-        showToast("Failed to remove favorite", "failure");
+        showToast({ text: "Failed to remove favorite", variant: "critical" });
     }
 }
 

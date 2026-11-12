@@ -6,8 +6,9 @@
 
 import "./styles.css";
 
-import { HeadingSecondary } from "@components/Heading";
+import { Heading } from "@components/Heading";
 import { Paragraph } from "@components/Paragraph";
+import { Margins } from "@utils/margins";
 import definePlugin from "@utils/types";
 
 import ButtonRow from "./ButtonRow";
@@ -23,7 +24,7 @@ export default definePlugin({
 
     settingsAboutComponent: () => (
         <>
-            <HeadingSecondary>How to use</HeadingSecondary>
+            <Heading className={Margins.bottom8}>How to use</Heading>
             <Paragraph>
                 Click the caret next to the chat bar buttons to open the tray. While it's open every
                 button — Discord's and every plugin's — can be dragged: drop one into the tray to hide

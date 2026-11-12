@@ -8,10 +8,11 @@ import { Button } from "@components/Button";
 import { ExpandableSection } from "@components/ExpandableCard";
 import { Flex } from "@components/Flex";
 import { FormSwitch } from "@components/FormSwitch";
-import { HeadingSecondary } from "@components/Heading";
+import { Heading } from "@components/Heading";
 import { DeleteIcon } from "@components/Icons";
 import { Paragraph } from "@components/Paragraph";
 import { Span } from "@components/Span";
+import { Margins } from "@utils/margins";
 import { RenderModalProps } from "@vencord/discord-types";
 import {
     ChannelStore,
@@ -167,7 +168,7 @@ function PresetCard({ preset, onPatch, onDuplicate, onDelete }: PresetEditProps 
             renderContent={() => (
                 <Flex flexDirection="column" gap={12}>
                     <section>
-                        <HeadingSecondary>Name</HeadingSecondary>
+                        <Heading className={Margins.bottom8}>Name</Heading>
                         <TextInput
                             value={preset.name}
                             placeholder="Preset name"
@@ -176,7 +177,7 @@ function PresetCard({ preset, onPatch, onDuplicate, onDelete }: PresetEditProps 
                     </section>
 
                     <section>
-                        <HeadingSecondary>Messages</HeadingSecondary>
+                        <Heading className={Margins.bottom8}>Messages</Heading>
                         <Paragraph>
                             {preset.messages.filter(m => m.trim() !== "").length > 1
                                 ? "Each send picks the next one, so a repeat won't send the same text twice in a row."
@@ -187,7 +188,7 @@ function PresetCard({ preset, onPatch, onDuplicate, onDelete }: PresetEditProps 
 
                     <Flex flexDirection="row" gap={12}>
                         <section style={{ flexGrow: 1 }}>
-                            <HeadingSecondary>Every (seconds)</HeadingSecondary>
+                            <Heading className={Margins.bottom8}>Every (seconds)</Heading>
                             <NumberInput
                                 value={Math.round(preset.intervalMs / 1000)}
                                 min={Math.ceil(MIN_INTERVAL_MS / 1000)}
@@ -195,7 +196,7 @@ function PresetCard({ preset, onPatch, onDuplicate, onDelete }: PresetEditProps 
                             />
                         </section>
                         <section style={{ flexGrow: 1 }}>
-                            <HeadingSecondary>Stop after (0 = never)</HeadingSecondary>
+                            <Heading className={Margins.bottom8}>Stop after (0 = never)</Heading>
                             <NumberInput
                                 value={preset.maxSends}
                                 onChange={n => onPatch({ maxSends: n })}
@@ -232,7 +233,7 @@ function PresetCard({ preset, onPatch, onDuplicate, onDelete }: PresetEditProps 
                                     disabled={!channelId}
                                     onClick={() => {
                                         const error = startRepeat(preset, channelId);
-                                        if (error) showToast(error, "failure");
+                                        if (error) showToast({ text: error, variant: "critical" });
                                     }}
                                 >
                                     Start in {channelId ? channelLabel(channelId) : "this channel"}
@@ -345,7 +346,7 @@ function GhostPanel({ modalProps }: { modalProps: RenderModalProps; }) {
                 {jobs.length > 0 && (
                     <section>
                         <Flex alignItems="center" justifyContent="space-between">
-                            <HeadingSecondary>Running repeats</HeadingSecondary>
+                            <Heading className={Margins.bottom8}>Running repeats</Heading>
                             <Button variant="dangerSecondary" size="small" onClick={() => stopAllRepeats()}>Stop all</Button>
                         </Flex>
                         <Flex flexDirection="column" gap={8} style={{ marginTop: 8 }}>
@@ -355,7 +356,7 @@ function GhostPanel({ modalProps }: { modalProps: RenderModalProps; }) {
                 )}
 
                 <section>
-                    <HeadingSecondary>Presets</HeadingSecondary>
+                    <Heading className={Margins.bottom8}>Presets</Heading>
                     {presets.length === 0
                         ? <Paragraph>No presets yet. Use <b>New preset</b> below to make one.</Paragraph>
                         : (

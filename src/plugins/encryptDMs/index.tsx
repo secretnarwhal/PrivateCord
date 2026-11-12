@@ -56,7 +56,7 @@ async function triggerManualDecode(message: Message) {
     if (result) {
         handleDecode(message.id, result);
     } else {
-        showToast("Could not decrypt this message. Check your shared secret or per-user key.", "failure");
+        showToast({ text: "Could not decrypt this message. Check your shared secret or per-user key.", variant: "critical" });
     }
 }
 
@@ -139,10 +139,10 @@ async function computeOutgoingEncoding(channelId: string, content: string): Prom
         const allKeys = getAllUserKeys();
         const hasMatchingKey = recipients.some(id => allKeys[id]);
         if (hasMatchingKey || (!isPrivate && Object.keys(allKeys).length > 0)) {
-            showToast(
-                "Message not sent: per-user AES keys don't apply in group DMs or servers. Set a global shared secret in EncryptDMs settings or disable auto-encrypt.",
-                "failure"
-            );
+            showToast({
+                text: "Message not sent: per-user AES keys don't apply in group DMs or servers. Set a global shared secret in EncryptDMs settings or disable auto-encrypt.",
+                variant: "critical"
+            });
             return { kind: "refuse" };
         }
     }
@@ -158,7 +158,7 @@ async function computeOutgoingEncoding(channelId: string, content: string): Prom
     if (!hasUserKey && !settings.store.autoEncodeOutgoing) return { kind: "skip" };
 
     if (!aesKey) {
-        showToast("Set a shared AES secret in the EncryptDMs settings before sending.", "failure");
+        showToast({ text: "Set a shared AES secret in the EncryptDMs settings before sending.", variant: "critical" });
         return { kind: "skip" };
     }
 
@@ -214,11 +214,11 @@ async function handleBeforeSend(channelId: string, message: MessageObject, props
 
     if (settings.store.encryptAttachments) {
         // The send hook no longer receives the upload list, so refuse rather than upload plaintext.
-        showToast("Message not sent: attachments can't be encrypted right now. Remove them or disable 'Encrypt attachments'.", "failure");
+        showToast({ text: "Message not sent: attachments can't be encrypted right now. Remove them or disable 'Encrypt attachments'.", variant: "critical" });
         return { cancel: true };
     } else if (!attachmentWarnSeen.has(channelId)) {
         attachmentWarnSeen.add(channelId);
-        showToast("Attachments are not encrypted — only message text. Enable 'Encrypt attachments' in EncryptDMs settings.", "message");
+        showToast({ text: "Attachments are not encrypted — only message text. Enable 'Encrypt attachments' in EncryptDMs settings." });
     }
 }
 

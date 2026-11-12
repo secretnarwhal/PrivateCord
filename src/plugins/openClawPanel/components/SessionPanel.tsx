@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-import { BaseText } from "@components/BaseText";
 import { Button } from "@components/Button";
+import { Text } from "@components/Text";
 import { getCurrentSession, loadSessions, loadUsage, setFocusedKey, useOpenClawData } from "@plugins/openClawPanel/dataStore";
 import {
     cl,
@@ -290,7 +290,7 @@ export function DockPanel({ onClose }: { onClose: () => void; }) {
         <div className={cl("dock")} role="complementary" aria-label="OpenClaw Panel">
             {/* ── Header ── */}
             <div className={cl("dock-header")}>
-                <BaseText tag="h2" size="md" weight="semibold">OpenClaw</BaseText>
+                <Text tag="h2" size="md" weight="semibold">OpenClaw</Text>
                 <div className={cl("dock-header-session")}>
                     <span className={cl("dock-header-key")} title={current?.key}>
                         {current?.derivedTitle?.trim() || current?.key || "No session"}

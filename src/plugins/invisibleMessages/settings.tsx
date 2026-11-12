@@ -19,8 +19,9 @@
 import { definePluginSettings } from "@api/Settings";
 import { Button } from "@components/Button";
 import { Flex } from "@components/Flex";
+import { Paragraph } from "@components/Paragraph";
 import { OptionType } from "@utils/types";
-import { ChannelStore, Forms } from "@webpack/common";
+import { ChannelStore } from "@webpack/common";
 
 import {
     clearChannelPasswords,
@@ -48,9 +49,9 @@ function ChannelPasswordManager() {
 
     if (entries.length === 0) {
         return (
-            <Forms.FormText>
+            <Paragraph>
                 No channels have a custom password. Messages use the default password above.
-            </Forms.FormText>
+            </Paragraph>
         );
     }
 
@@ -58,7 +59,7 @@ function ChannelPasswordManager() {
         <Flex flexDirection="column" gap="0.5em">
             {entries.map(channelId => (
                 <Flex key={channelId} alignItems="center" gap="0.5em">
-                    <Forms.FormText style={{ flex: 1 }}>{channelLabel(channelId)}</Forms.FormText>
+                    <Paragraph style={{ flex: 1 }}>{channelLabel(channelId)}</Paragraph>
                     <Button
                         size="small"
                         variant="dangerPrimary"

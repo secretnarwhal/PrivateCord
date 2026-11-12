@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-import { HeadingTertiary } from "@components/Heading";
+import { Heading } from "@components/Heading";
 import { Paragraph } from "@components/Paragraph";
 import { cl, isVideo, prettyGifName } from "@plugins/gifVault/utils";
 import { FavGif, getGifMeta, setGifDetails } from "@plugins/gifVault/vault";
@@ -39,14 +39,14 @@ function EditGifModal({ modalProps, gif }: { modalProps: RenderModalProps; gif: 
                     ? <video src={gif.src} muted loop autoPlay playsInline />
                     : <img src={gif.src} alt="" />}
             </div>
-            <HeadingTertiary>Display name</HeadingTertiary>
+            <Heading tag="h4">Display name</Heading>
             <TextInput
                 value={title}
                 onChange={setTitle}
                 placeholder={prettyGifName(gif, undefined)}
                 autoFocus
             />
-            <HeadingTertiary className={cl("modal-tags-title")}>Tags</HeadingTertiary>
+            <Heading tag="h4" className={cl("modal-tags-title")}>Tags</Heading>
             <TextInput
                 value={tags}
                 onChange={setTags}

@@ -38,7 +38,11 @@
     opacity: 0.65;
     cursor: pointer;
     transform: translateY(-50%);
-    transition: opacity 0.15s ease, width 0.15s ease, background-color 0.15s ease, color 0.15s ease;
+    transition:
+        opacity 0.15s ease,
+        width 0.15s ease,
+        background-color 0.15s ease,
+        color 0.15s ease;
 }
 
 .vc-bcv-handle:hover {
@@ -58,7 +62,9 @@
     border-top: 2px solid currentcolor;
     border-right: 2px solid currentcolor;
     transform: rotate(-135deg);
-    transition: transform 0.15s ease, margin 0.15s ease;
+    transition:
+        transform 0.15s ease,
+        margin 0.15s ease;
 }
 
 .vc-bcv-collapsed .vc-bcv-handle::before {

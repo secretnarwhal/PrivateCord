@@ -45,7 +45,7 @@ async function triggerManualDecode(message: Message) {
     if (result) {
         handleDecode(message.id, result);
     } else {
-        showToast("Could not decode this message. Check the encoding setting.", "failure");
+        showToast({ text: "Could not decode this message. Check the encoding setting.", variant: "critical" });
     }
 }
 

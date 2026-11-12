@@ -16,9 +16,11 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
+import { Heading } from "@components/Heading";
+import { Paragraph } from "@components/Paragraph";
 import { Margins } from "@utils/margins";
 import { RenderModalProps } from "@vencord/discord-types";
-import { Forms, Modal, openModal, useRef, useState } from "@webpack/common";
+import { Modal, openModal, useRef, useState } from "@webpack/common";
 
 import { getUserKey, removeUserKey, setUserKey } from "./userKeys";
 import { cl } from "./utils";
@@ -45,11 +47,11 @@ function UserKeyModal({ rootProps, userId, username }: { rootProps: RenderModalP
     return (
         <Modal {...rootProps} title={`AES Key — @${username}`}>
             <section className={Margins.bottom16}>
-                <Forms.FormTitle tag="h3">Per-User AES-256-GCM Secret Key</Forms.FormTitle>
-                <Forms.FormText className={Margins.bottom8}>
+                <Heading className={Margins.bottom8}>Per-User AES-256-GCM Secret Key</Heading>
+                <Paragraph className={Margins.bottom8}>
                     This key overrides the global secret when sending to or auto-decrypting messages from <strong>@{username}</strong>.
                     Both users must enter the exact same key. Stored in plain text in your local Vencord settings.
-                </Forms.FormText>
+                </Paragraph>
                 <div className={cl("secret-row")}>
                     <input
                         ref={inputRef}

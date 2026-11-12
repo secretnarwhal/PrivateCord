@@ -7,8 +7,9 @@
 import "./styles.css";
 
 import ErrorBoundary from "@components/ErrorBoundary";
-import { HeadingSecondary } from "@components/Heading";
+import { Heading } from "@components/Heading";
 import { Paragraph } from "@components/Paragraph";
+import { Margins } from "@utils/margins";
 import definePlugin from "@utils/types";
 import { createRoot } from "@webpack/common";
 
@@ -37,7 +38,7 @@ export default definePlugin({
 
     settingsAboutComponent: () => (
         <>
-            <HeadingSecondary>How to use</HeadingSecondary>
+            <Heading className={Margins.bottom8}>How to use</Heading>
             <Paragraph>
                 Open the GIF picker → Favorites. Click folders to open them, drag GIFs onto folders
                 (or breadcrumbs) to organize, and drag folders into folders to nest them. Hovering a

@@ -9,15 +9,17 @@ import { Button } from "@components/Button";
 import ErrorBoundary from "@components/ErrorBoundary";
 import { Flex } from "@components/Flex";
 import { FormSwitch } from "@components/FormSwitch";
+import { Heading } from "@components/Heading";
 import { DeleteIcon } from "@components/Icons";
+import { Paragraph } from "@components/Paragraph";
 import { Logger } from "@utils/Logger";
+import { Margins } from "@utils/margins";
 import definePlugin, { OptionType } from "@utils/types";
 import { RenderModalProps } from "@vencord/discord-types";
 import { ChannelType } from "@vencord/discord-types/enums";
 import { findComponentByCodeLazy } from "@webpack";
 import {
     ChannelStore,
-    Forms,
     MessageActions,
     Modal,
     openModal,
@@ -25,7 +27,6 @@ import {
     RestAPI,
     SelectedChannelStore,
     SelectedGuildStore,
-    Text,
     TextInput,
     useEffect,
     useRef,
@@ -296,7 +297,7 @@ function MassDeleterUI(props: RenderModalProps) {
             ]}
         >
             <div style={{ marginBottom: "15px" }}>
-                <Forms.FormTitle tag="h5">Author ID</Forms.FormTitle>
+                <Heading className={Margins.bottom8}>Author ID</Heading>
                 <Flex flexDirection="row" alignItems="center">
                     <TextInput
                         value={form.authorId}
@@ -313,7 +314,7 @@ function MassDeleterUI(props: RenderModalProps) {
             </div>
 
             <div style={{ marginBottom: "15px" }}>
-                <Forms.FormTitle tag="h5">Server ID</Forms.FormTitle>
+                <Heading className={Margins.bottom8}>Server ID</Heading>
                 <Flex flexDirection="row" alignItems="center">
                     <TextInput
                         value={form.guildId}
@@ -330,7 +331,7 @@ function MassDeleterUI(props: RenderModalProps) {
             </div>
 
             <div style={{ marginBottom: "15px" }}>
-                <Forms.FormTitle tag="h5">Channel ID</Forms.FormTitle>
+                <Heading className={Margins.bottom8}>Channel ID</Heading>
                 <Flex flexDirection="row" alignItems="center">
                     <TextInput
                         value={form.channelId}
@@ -350,7 +351,7 @@ function MassDeleterUI(props: RenderModalProps) {
             </div>
 
             <div style={{ marginBottom: "15px" }}>
-                <Forms.FormTitle tag="h5">Search Filter</Forms.FormTitle>
+                <Heading className={Margins.bottom8}>Search Filter</Heading>
                 <TextInput
                     value={form.searchQuery}
                     onChange={(v: string) => setForm(f => ({ ...f, searchQuery: v }))}
@@ -369,7 +370,7 @@ function MassDeleterUI(props: RenderModalProps) {
 
             <Flex flexDirection="row" style={{ marginBottom: "15px" }}>
                 <div style={{ flex: 1, marginRight: "10px" }}>
-                    <Forms.FormTitle tag="h5">Search Delay (ms)</Forms.FormTitle>
+                    <Heading className={Margins.bottom8}>Search Delay (ms)</Heading>
                     <TextInput
                         type="number"
                         value={form.searchDelay.toString()}
@@ -377,7 +378,7 @@ function MassDeleterUI(props: RenderModalProps) {
                     />
                 </div>
                 <div style={{ flex: 1 }}>
-                    <Forms.FormTitle tag="h5">Delete Delay (ms)</Forms.FormTitle>
+                    <Heading className={Margins.bottom8}>Delete Delay (ms)</Heading>
                     <TextInput
                         type="number"
                         value={form.deleteDelay.toString()}
@@ -402,9 +403,9 @@ function MassDeleterUI(props: RenderModalProps) {
 
             {manager.progress.total > 0 && (
                 <div style={{ marginTop: "10px" }}>
-                    <Text variant="text-sm/normal">
+                    <Paragraph>
                         Progress: {manager.progress.current} / {manager.progress.total}
-                    </Text>
+                    </Paragraph>
                     <div style={{
                         width: "100%",
                         height: "4px",

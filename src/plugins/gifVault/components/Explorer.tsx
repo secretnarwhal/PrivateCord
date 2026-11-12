@@ -265,7 +265,7 @@ export function Explorer({ store, variant, onSelectGif, className }: ExplorerPro
         }
         const channelId = SelectedChannelStore.getChannelId();
         if (!channelId) {
-            showToast("Open a channel first!", "failure");
+            showToast({ text: "Open a channel first!", variant: "critical" });
             return;
         }
         sendMessage(channelId, { content: gif.url }, false);

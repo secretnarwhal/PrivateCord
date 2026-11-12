@@ -18,9 +18,10 @@
 
 import { Divider } from "@components/Divider";
 import { FormSwitch } from "@components/FormSwitch";
+import { Heading } from "@components/Heading";
 import { Margins } from "@utils/margins";
 import { RenderModalProps } from "@vencord/discord-types";
-import { Forms, Modal, openModal, SearchableSelect } from "@webpack/common";
+import { Modal, openModal, SearchableSelect } from "@webpack/common";
 
 import { settings } from "./settings";
 import { DECODE_OPTIONS, ENCODE_OPTIONS } from "./utils";
@@ -38,7 +39,7 @@ function EncodingSelect({
 
     return (
         <section className={Margins.bottom16}>
-            <Forms.FormTitle tag="h3">{label}</Forms.FormTitle>
+            <Heading className={Margins.bottom8}>{label}</Heading>
             <SearchableSelect
                 options={options}
                 value={currentValue}

@@ -16,10 +16,12 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
+import { Heading } from "@components/Heading";
+import { Paragraph } from "@components/Paragraph";
 import { sendMessage } from "@utils/discord";
 import { Margins } from "@utils/margins";
 import { Message, RenderModalProps } from "@vencord/discord-types";
-import { Forms, Modal, openModal, SelectedChannelStore, showToast, useRef } from "@webpack/common";
+import { Modal, openModal, SelectedChannelStore, showToast, useRef } from "@webpack/common";
 
 import { setForcedReveal } from "./revealState";
 import { decrypt, encrypt } from "./stegcloak";
@@ -36,7 +38,7 @@ function ComposeModal({ modalProps, channelId }: { modalProps: RenderModalProps;
     const send = async () => {
         const targetChannelId = channelId || SelectedChannelStore.getChannelId();
         if (!targetChannelId) {
-            showToast("Open a chat first", "failure");
+            showToast({ text: "Open a chat first", variant: "critical" });
             return;
         }
 
@@ -45,11 +47,11 @@ function ComposeModal({ modalProps, channelId }: { modalProps: RenderModalProps;
         const passwordInput = (passwordRef.current?.value ?? "").trim();
 
         if (cover.split(" ").length < 2) {
-            showToast("The visible message must contain at least 2 words", "failure");
+            showToast({ text: "The visible message must contain at least 2 words", variant: "critical" });
             return;
         }
         if (!hidden) {
-            showToast("Enter a hidden message", "failure");
+            showToast({ text: "Enter a hidden message", variant: "critical" });
             return;
         }
 
@@ -60,7 +62,7 @@ function ComposeModal({ modalProps, channelId }: { modalProps: RenderModalProps;
             modalProps.onClose();
         } catch (e) {
             logger.error("Failed to compose invisible message", e);
-            showToast("Failed to create invisible message", "failure");
+            showToast({ text: "Failed to create invisible message", variant: "critical" });
         }
     };
 
@@ -75,10 +77,10 @@ function ComposeModal({ modalProps, channelId }: { modalProps: RenderModalProps;
             ]}
         >
             <section className={Margins.bottom16}>
-                <Forms.FormTitle tag="h3">Visible message</Forms.FormTitle>
-                <Forms.FormText className={Margins.bottom8}>
+                <Heading className={Margins.bottom8}>Visible message</Heading>
+                <Paragraph className={Margins.bottom8}>
                     What everyone sees. Must contain at least two words — the secret is woven into it.
-                </Forms.FormText>
+                </Paragraph>
                 <input
                     ref={coverRef}
                     type="text"
@@ -91,10 +93,10 @@ function ComposeModal({ modalProps, channelId }: { modalProps: RenderModalProps;
             </section>
 
             <section className={Margins.bottom16}>
-                <Forms.FormTitle tag="h3">Hidden message</Forms.FormTitle>
-                <Forms.FormText className={Margins.bottom8}>
+                <Heading className={Margins.bottom8}>Hidden message</Heading>
+                <Paragraph className={Margins.bottom8}>
                     The secret. Only people with the password can reveal it.
-                </Forms.FormText>
+                </Paragraph>
                 <textarea
                     ref={hiddenRef}
                     className={cl("input", "hidden-input")}
@@ -106,10 +108,10 @@ function ComposeModal({ modalProps, channelId }: { modalProps: RenderModalProps;
             </section>
 
             <section className={Margins.bottom16}>
-                <Forms.FormTitle tag="h3">Password (optional)</Forms.FormTitle>
-                <Forms.FormText className={Margins.bottom8}>
+                <Heading className={Margins.bottom8}>Password (optional)</Heading>
+                <Paragraph className={Margins.bottom8}>
                     Leave empty to use this channel's password (or the default password).
-                </Forms.FormText>
+                </Paragraph>
                 <input
                     ref={passwordRef}
                     type="text"
@@ -135,10 +137,10 @@ function SetPasswordModal({ modalProps }: { modalProps: RenderModalProps; }) {
     const save = async () => {
         const value = (inputRef.current?.value ?? "").trim();
         await setPermanentPassword(value);
-        showToast(
-            value ? "Password saved" : "Password cleared — using channel / default password",
-            "success"
-        );
+        showToast({
+            text: value ? "Password saved" : "Password cleared — using channel / default password",
+            variant: "success"
+        });
         modalProps.onClose();
     };
 
@@ -153,12 +155,12 @@ function SetPasswordModal({ modalProps }: { modalProps: RenderModalProps; }) {
             ]}
         >
             <section className={Margins.bottom16}>
-                <Forms.FormTitle tag="h3">Permanent password</Forms.FormTitle>
-                <Forms.FormText className={Margins.bottom8}>
+                <Heading className={Margins.bottom8}>Permanent password</Heading>
+                <Paragraph className={Margins.bottom8}>
                     Reveal Mode auto-decrypts messages with this password, and secrets typed in
                     the reveal-mode chatbar are encrypted with it. Leave empty to fall back to the
                     channel or default password. Tip: right-click the chat-bar button to toggle Reveal Mode.
-                </Forms.FormText>
+                </Paragraph>
                 <input
                     ref={inputRef}
                     type="text"
@@ -205,10 +207,10 @@ function RevealPasswordModal({ modalProps, defaultPassword, onResult }: {
             ]}
         >
             <section className={Margins.bottom16}>
-                <Forms.FormTitle tag="h3">Password</Forms.FormTitle>
-                <Forms.FormText className={Margins.bottom8}>
+                <Heading className={Margins.bottom8}>Password</Heading>
+                <Paragraph className={Margins.bottom8}>
                     Enter the password to decrypt this message. Leave it as-is to use the last-used or channel password.
-                </Forms.FormText>
+                </Paragraph>
                 <input
                     ref={inputRef}
                     type="text"
@@ -270,6 +272,6 @@ export async function revealInvisibleMessage(message: Message) {
         setForcedReveal(message.id, text);
     } catch (e) {
         logger.error("Failed to decrypt invisible message", e);
-        showToast("Could not decrypt — wrong password?", "failure");
+        showToast({ text: "Could not decrypt — wrong password?", variant: "critical" });
     }
 }

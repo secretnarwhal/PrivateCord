@@ -83,7 +83,9 @@
     border-radius: 9px;
     background: var(--vc-gv-bg-3);
     border: 1px solid var(--vc-gv-border);
-    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    transition:
+        border-color 0.15s ease,
+        box-shadow 0.15s ease;
 }
 
 .vc-gifvault-search:focus-within {
@@ -122,7 +124,9 @@
     background: var(--vc-gv-hover);
     color: var(--vc-gv-muted);
     cursor: pointer;
-    transition: color 0.12s ease, background 0.12s ease;
+    transition:
+        color 0.12s ease,
+        background 0.12s ease;
 }
 
 .vc-gifvault-search-clear:hover {
@@ -142,7 +146,11 @@
     background: var(--vc-gv-bg-3);
     color: var(--vc-gv-muted);
     cursor: pointer;
-    transition: color 0.12s ease, background 0.12s ease, border-color 0.12s ease, transform 0.1s ease;
+    transition:
+        color 0.12s ease,
+        background 0.12s ease,
+        border-color 0.12s ease,
+        transform 0.1s ease;
 }
 
 .vc-gifvault-icon-btn:disabled {
@@ -186,7 +194,9 @@
     background: transparent;
     color: var(--vc-gv-muted);
     cursor: pointer;
-    transition: color 0.12s ease, background 0.12s ease;
+    transition:
+        color 0.12s ease,
+        background 0.12s ease;
 }
 
 .vc-gifvault-up-btn:disabled {
@@ -226,7 +236,9 @@
     font-size: 12.5px;
     font-family: inherit;
     cursor: pointer;
-    transition: color 0.12s ease, background 0.12s ease;
+    transition:
+        color 0.12s ease,
+        background 0.12s ease;
 }
 
 .vc-gifvault-crumb:hover {
@@ -309,7 +321,10 @@
     user-select: none;
     animation: vc-gv-pop 0.35s cubic-bezier(0.2, 0.9, 0.3, 1.2) backwards;
     animation-delay: var(--vc-gv-delay, 0ms);
-    transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+    transition:
+        background 0.15s ease,
+        border-color 0.15s ease,
+        transform 0.15s ease;
 }
 
 .vc-gifvault-folder-card:hover {
@@ -407,7 +422,10 @@
 
 .vc-gifvault-gif-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(min(var(--vc-gifvault-tile, 140px), 100%), 1fr));
+    grid-template-columns: repeat(
+        auto-fill,
+        minmax(min(var(--vc-gifvault-tile, 140px), 100%), 1fr)
+    );
     gap: 10px;
 }
 
@@ -481,7 +499,12 @@
 .vc-gifvault-media-placeholder {
     position: absolute;
     inset: 0;
-    background: linear-gradient(110deg, var(--vc-gv-bg-3) 8%, var(--vc-gv-bg-1) 18%, var(--vc-gv-bg-3) 33%);
+    background: linear-gradient(
+        110deg,
+        var(--vc-gv-bg-3) 8%,
+        var(--vc-gv-bg-1) 18%,
+        var(--vc-gv-bg-3) 33%
+    );
     background-size: 200% 100%;
     animation: vc-gv-shimmer 1.4s linear infinite;
 }
@@ -554,7 +577,9 @@
     gap: 4px;
     opacity: 0;
     transform: translateY(-4px);
-    transition: opacity 0.16s ease, transform 0.16s ease;
+    transition:
+        opacity 0.16s ease,
+        transform 0.16s ease;
 }
 
 .vc-gifvault-gif-tile:hover .vc-gifvault-tile-actions {
@@ -574,7 +599,9 @@
     backdrop-filter: blur(6px);
     color: rgb(255 255 255 / 90%);
     cursor: pointer;
-    transition: background 0.12s ease, transform 0.1s ease;
+    transition:
+        background 0.12s ease,
+        transform 0.1s ease;
 }
 
 .vc-gifvault-qa-btn:hover {
@@ -673,7 +700,9 @@
     font-size: 11px;
     font-family: inherit;
     cursor: pointer;
-    transition: color 0.12s ease, background 0.12s ease;
+    transition:
+        color 0.12s ease,
+        background 0.12s ease;
 }
 
 .vc-gifvault-statusbar-sort:hover {
@@ -747,7 +776,11 @@
     width: 22px;
     height: 22px;
     border-radius: 7px;
-    background: linear-gradient(140deg, color-mix(in oklab, var(--vc-gv-accent) 80%, #fff), var(--vc-gv-accent));
+    background: linear-gradient(
+        140deg,
+        color-mix(in oklab, var(--vc-gv-accent) 80%, #fff),
+        var(--vc-gv-accent)
+    );
     color: #fff;
     box-shadow: 0 2px 8px color-mix(in oklab, var(--vc-gv-accent) 50%, transparent);
 }
