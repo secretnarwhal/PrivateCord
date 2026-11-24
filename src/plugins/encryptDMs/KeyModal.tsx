@@ -20,13 +20,22 @@ import { Heading } from "@components/Heading";
 import { Paragraph } from "@components/Paragraph";
 import { Margins } from "@utils/margins";
 import { RenderModalProps } from "@vencord/discord-types";
-import { Modal, openModal, useRef, useState } from "@webpack/common";
+import { Modal, openModal, React, useRef, useState } from "@webpack/common";
 
-import { getUserKey, removeUserKey, setUserKey } from "./userKeys";
+import { channelKeys, getChannelLabel, KeyedStore, userKeys } from "./keys";
 import { cl } from "./utils";
 
-function UserKeyModal({ rootProps, userId, username }: { rootProps: RenderModalProps; userId: string; username: string; }) {
-    const existingKey = getUserKey(userId) ?? "";
+interface KeyModalProps {
+    rootProps: RenderModalProps;
+    store: KeyedStore<string>;
+    id: string;
+    title: string;
+    heading: string;
+    description: React.ReactNode;
+}
+
+function KeyModal({ rootProps, store, id, title, heading, description }: KeyModalProps) {
+    const existingKey = store.get(id) ?? "";
     // Uncontrolled defaultValue prevents React from setting the DOM `value` attribute — partial mitigation against other plugins reading via querySelector; full mitigation needs an isolated iframe.
     const inputRef = useRef<HTMLInputElement>(null);
     const [visible, setVisible] = useState(false);
@@ -35,22 +44,21 @@ function UserKeyModal({ rootProps, userId, username }: { rootProps: RenderModalP
     const save = async () => {
         const trimmed = (inputRef.current?.value ?? "").trim();
         if (!trimmed) return;
-        await setUserKey(userId, trimmed);
+        await store.set(id, trimmed);
         rootProps.onClose();
     };
 
     const clear = async () => {
-        await removeUserKey(userId);
+        await store.remove(id);
         rootProps.onClose();
     };
 
     return (
-        <Modal {...rootProps} title={`AES Key — @${username}`}>
+        <Modal {...rootProps} title={title}>
             <section className={Margins.bottom16}>
-                <Heading className={Margins.bottom8}>Per-User AES-256-GCM Secret Key</Heading>
+                <Heading className={Margins.bottom8}>{heading}</Heading>
                 <Paragraph className={Margins.bottom8}>
-                    This key overrides the global secret when sending to or auto-decrypting messages from <strong>@{username}</strong>.
-                    Both users must enter the exact same key. Stored in plain text in your local Vencord settings.
+                    {description} Both sides must enter the exact same key. Stored locally on this device only.
                 </Paragraph>
                 <div className={cl("secret-row")}>
                     <input
@@ -107,5 +115,28 @@ function UserKeyModal({ rootProps, userId, username }: { rootProps: RenderModalP
 }
 
 export function openUserKeyModal(userId: string, username: string) {
-    openModal(props => <UserKeyModal rootProps={props} userId={userId} username={username} />);
+    openModal(props => (
+        <KeyModal
+            rootProps={props}
+            store={userKeys}
+            id={userId}
+            title={`AES Key — @${username}`}
+            heading="Per-User AES-256-GCM Secret Key"
+            description={<>Used when sending to or auto-decrypting messages from <strong>@{username}</strong>, unless the channel has its own key.</>}
+        />
+    ));
+}
+
+export function openChannelKeyModal(channelId: string) {
+    const label = getChannelLabel(channelId);
+    openModal(props => (
+        <KeyModal
+            rootProps={props}
+            store={channelKeys}
+            id={channelId}
+            title={`AES Key — ${label}`}
+            heading="Per-Channel AES-256-GCM Secret Key"
+            description={<>Used for every message sent or auto-decrypted in <strong>{label}</strong>. Overrides per-user keys and the shared secret.</>}
+        />
+    ));
 }

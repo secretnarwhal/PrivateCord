@@ -24,9 +24,9 @@ import { Margins } from "@utils/margins";
 import { RenderModalProps } from "@vencord/discord-types";
 import { Modal, openModal, useEffect, useRef, UserStore, useState } from "@webpack/common";
 
+import { openChannelKeyModal, openUserKeyModal } from "./KeyModal";
+import { channelKeys, disabledChannels, getChannelLabel, userKeys } from "./keys";
 import { settings } from "./settings";
-import { openUserKeyModal } from "./UserKeyModal";
-import { removeUserKey, useUserKeys } from "./userKeys";
 import { cl } from "./utils";
 
 function AesSecretInput() {
@@ -97,7 +97,7 @@ function AutoEncodeToggle() {
     return (
         <FormSwitch
             title="Auto-Encrypt Outgoing Messages"
-            description="Automatically encrypt your messages before sending using your shared secret"
+            description="Encrypt your messages with the shared secret in channels that don't have their own key. Channels and DMs with their own key are toggled individually from their right-click menu."
             value={value}
             onChange={v => (settings.store.autoEncodeOutgoing = v)}
             hideBorder
@@ -105,44 +105,76 @@ function AutoEncodeToggle() {
     );
 }
 
-function UserKeysSection() {
-    const userKeys = useUserKeys();
-    const entries = Object.entries(userKeys);
+interface KeyListProps {
+    heading: string;
+    description: string;
+    entries: { id: string; label: string; }[];
+    onEdit(id: string, label: string): void;
+    onRemove(id: string): void;
+}
 
+function KeyList({ heading, description, entries, onEdit, onRemove }: KeyListProps) {
     if (entries.length === 0) return null;
 
     return (
         <>
             <Divider className={Margins.bottom16} />
             <section className={Margins.bottom16}>
-                <Heading className={Margins.bottom8}>Per-User AES Keys</Heading>
-                <Paragraph className={Margins.bottom8}>
-                    These keys override the global secret for specific users. Right-click a user to add or update a key.
-                </Paragraph>
-                {entries.map(([userId]) => {
-                    const username = UserStore.getUser(userId)?.username ?? userId;
-                    return (
-                        <div key={userId} className={cl("user-key-row")}>
-                            <span className={cl("user-key-name")}>@{username}</span>
-                            <button
-                                className={cl("user-key-btn", "user-key-edit")}
-                                onClick={() => openUserKeyModal(userId, username)}
-                                type="button"
-                            >
-                                Edit
-                            </button>
-                            <button
-                                className={cl("user-key-btn", "user-key-clear")}
-                                onClick={() => removeUserKey(userId)}
-                                type="button"
-                            >
-                                Remove
-                            </button>
-                        </div>
-                    );
-                })}
+                <Heading className={Margins.bottom8}>{heading}</Heading>
+                <Paragraph className={Margins.bottom8}>{description}</Paragraph>
+                {entries.map(({ id, label }) => (
+                    <div key={id} className={cl("user-key-row")}>
+                        <span className={cl("user-key-name")}>{label}</span>
+                        <button
+                            className={cl("user-key-btn", "user-key-edit")}
+                            onClick={() => onEdit(id, label)}
+                            type="button"
+                        >
+                            Edit
+                        </button>
+                        <button
+                            className={cl("user-key-btn", "user-key-clear")}
+                            onClick={() => onRemove(id)}
+                            type="button"
+                        >
+                            Remove
+                        </button>
+                    </div>
+                ))}
             </section>
         </>
+    );
+}
+
+function ChannelKeysSection() {
+    const keys = channelKeys.use();
+    disabledChannels.use();
+
+    return (
+        <KeyList
+            heading="Per-Channel AES Keys"
+            description="These keys override per-user keys and the global secret in specific channels and group DMs. Right-click a channel or group DM to add a key or toggle encryption."
+            entries={Object.keys(keys).map(id => ({
+                id,
+                label: getChannelLabel(id) + (disabledChannels.get(id) ? " (off)" : ""),
+            }))}
+            onEdit={id => openChannelKeyModal(id)}
+            onRemove={id => channelKeys.remove(id)}
+        />
+    );
+}
+
+function UserKeysSection() {
+    const keys = userKeys.use();
+
+    return (
+        <KeyList
+            heading="Per-User AES Keys"
+            description="These keys override the global secret for specific users. Right-click a user to add or update a key, or to toggle encryption in your DM with them."
+            entries={Object.keys(keys).map(id => ({ id, label: `@${UserStore.getUser(id)?.username ?? id}` }))}
+            onEdit={(id, label) => openUserKeyModal(id, label.slice(1))}
+            onRemove={id => userKeys.remove(id)}
+        />
     );
 }
 
@@ -156,6 +188,7 @@ function EncryptDMsModal({ rootProps }: { rootProps: RenderModalProps; }) {
             <AutoDecodeToggle />
             <AutoEncodeToggle />
 
+            <ChannelKeysSection />
             <UserKeysSection />
         </Modal>
     );

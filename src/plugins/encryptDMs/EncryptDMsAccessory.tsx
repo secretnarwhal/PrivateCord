@@ -17,42 +17,22 @@
 */
 
 import { classes } from "@utils/misc";
-import { Channel, Message } from "@vencord/discord-types";
+import { Message } from "@vencord/discord-types";
 import { findCssClassesLazy } from "@webpack";
-import { ChannelStore, Parser, useEffect, useRef, UserStore, useState } from "@webpack/common";
+import { ChannelStore, Parser, useEffect, useRef, useState } from "@webpack/common";
 
 import { EncryptDMsIcon } from "./EncryptDMsIcon";
 import { isEncryptedAttachmentName } from "./encryptedAttachment";
 import { EncryptedAttachments } from "./EncryptedAttachments";
+import { channelKeys, resolveReceiveKey, userKeys } from "./keys";
 import { LinkPreviews } from "./LinkPreview";
 import { settings } from "./settings";
-import { useUserKeys } from "./userKeys";
 import { cl, ConversionResult, decryptMessage } from "./utils";
 
 // Discord's real message-content markup classes — applying them to our decrypted
 // text makes bold/italic/code/spoilers/headers/custom-emoji render exactly like a
 // native message instead of unstyled plain text.
 const MarkupClasses = findCssClassesLazy("markup", "messageContent");
-
-export function resolveAesKey(
-    message: Message,
-    channel: Channel | undefined | null,
-    aesSecret: string,
-    userKeys: Record<string, string>,
-    currentUserId: string | undefined,
-): { key: string; hasUserKey: boolean; } {
-    const authorId = message.author?.id;
-    const recipients = channel?.recipients ?? [];
-    if (authorId === currentUserId && recipients.length === 1) {
-        const partnerId = recipients[0];
-        const partnerKey = partnerId ? userKeys[partnerId] : undefined;
-        if (partnerKey) return { key: partnerKey, hasUserKey: true };
-        return { key: aesSecret, hasUserKey: false };
-    }
-    const k = authorId ? userKeys[authorId] : undefined;
-    if (k) return { key: k, hasUserKey: true };
-    return { key: aesSecret, hasUserKey: false };
-}
 
 const ConversionSetters = new Map<string, Set<(v: ConversionResult) => void>>();
 const DecodedMessages = new Map<string, ConversionResult>();
@@ -115,12 +95,14 @@ function findMessageContentElAsync(messageId: string, signal: AbortSignal): Prom
 const hideRefcounts = new WeakMap<HTMLElement, number>();
 
 export function EncryptDMsAccessory({ message }: { message: Message; }) {
-    const { autoDecodeReceived, aesSecret, linkPreviews } = settings.use(["autoDecodeReceived", "aesSecret", "linkPreviews"]);
-    const userKeys = useUserKeys();
-    const currentUserId = UserStore.getCurrentUser()?.id;
+    const { autoDecodeReceived, linkPreviews } = settings.use(["autoDecodeReceived", "aesSecret", "linkPreviews"]);
+    userKeys.use();
+    channelKeys.use();
     const channel = ChannelStore.getChannel(message.channel_id);
 
-    const { key: effectiveKey, hasUserKey } = resolveAesKey(message, channel, aesSecret, userKeys, currentUserId);
+    const { key: effectiveKey, source } = resolveReceiveKey(message, channel);
+    // A channel or per-user key forces auto-decrypt regardless of the autoDecodeReceived toggle.
+    const hasOwnKey = source !== "shared";
 
     const [result, setResult] = useState<ConversionResult | undefined>();
     const [showOriginal, setShowOriginal] = useState(false);
@@ -151,8 +133,7 @@ export function EncryptDMsAccessory({ message }: { message: Message; }) {
         set.add(setResult);
         ConversionSetters.set(message.id, set);
 
-        // A per-user key forces AES auto-decrypt regardless of the autoDecodeReceived toggle.
-        if ((autoDecodeReceived || hasUserKey) && message.content) {
+        if ((autoDecodeReceived || hasOwnKey) && message.content) {
             decryptMessage(message.content, effectiveKey)
                 .then(decoded => {
                     if (decoded) {
@@ -167,7 +148,7 @@ export function EncryptDMsAccessory({ message }: { message: Message; }) {
             set.delete(setResult);
             if (!set.size) ConversionSetters.delete(message.id);
         };
-    }, [message.id, message.content, autoDecodeReceived, hasUserKey, effectiveKey]);
+    }, [message.id, message.content, autoDecodeReceived, hasOwnKey, effectiveKey]);
 
     // Hide the original encrypted message content when decrypted; show when toggled
     useEffect(() => {
@@ -279,7 +260,7 @@ export function EncryptDMsAccessory({ message }: { message: Message; }) {
                         secret={effectiveKey}
                         // A manual text decrypt (result set) is also a clear signal the
                         // user wants this message's attachments decrypted.
-                        enabled={autoDecodeReceived || hasUserKey || !!result}
+                        enabled={autoDecodeReceived || hasOwnKey || !!result}
                     />
                 )}
                 {result && linkPreviews && <LinkPreviews text={result.text} />}

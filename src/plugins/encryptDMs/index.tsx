@@ -22,14 +22,14 @@ import { findGroupChildrenByChildId, NavContextMenuPatchCallback } from "@api/Co
 import { MessageObject, SendMessageProps } from "@api/MessageEvents";
 import definePlugin from "@utils/types";
 import { Channel, CloudUpload, Message, User } from "@vencord/discord-types";
-import { ChannelStore, Menu, showToast, UserStore } from "@webpack/common";
+import { ChannelStore, Menu, showToast } from "@webpack/common";
 
-import { EncryptDMsAccessory, handleDecode, resolveAesKey } from "./EncryptDMsAccessory";
+import { EncryptDMsAccessory, handleDecode } from "./EncryptDMsAccessory";
 import { EncryptDMsChatBarIcon, EncryptDMsIcon, scheduleAutoEncodeTooltipHide, setAutoEncodeTooltip } from "./EncryptDMsIcon";
 import { encryptFile, isEncryptedAttachmentName } from "./encryptedAttachment";
+import { openChannelKeyModal, openUserKeyModal } from "./KeyModal";
+import { channelKeys, hasOwnKey, isChannelEncrypted, resolveReceiveKey, resolveSendKey, toggleChannelEncryption } from "./keys";
 import { settings } from "./settings";
-import { openUserKeyModal } from "./UserKeyModal";
-import { getAllUserKeys, getUserKey } from "./userKeys";
 import { decryptMessage, encrypt } from "./utils";
 
 function getMessageContent(message: Message): string {
@@ -44,19 +44,12 @@ function getMessageContent(message: Message): string {
 
 async function triggerManualDecode(message: Message) {
     const content = getMessageContent(message);
-    const channel = ChannelStore.getChannel(message.channel_id);
-    const { key: aesKey } = resolveAesKey(
-        message,
-        channel,
-        settings.store.aesSecret,
-        getAllUserKeys(),
-        UserStore.getCurrentUser()?.id,
-    );
-    const result = await decryptMessage(content, aesKey);
+    const { key } = resolveReceiveKey(message, ChannelStore.getChannel(message.channel_id));
+    const result = await decryptMessage(content, key);
     if (result) {
         handleDecode(message.id, result);
     } else {
-        showToast({ text: "Could not decrypt this message. Check your shared secret or per-user key.", variant: "critical" });
+        showToast({ text: "Could not decrypt this message. Check your shared secret, channel key or per-user key.", variant: "critical" });
     }
 }
 
@@ -77,45 +70,70 @@ const messageCtxPatch: NavContextMenuPatchCallback = (children, { message }: { m
     ));
 };
 
+// Only channels with their own key get a toggle; the rest follow the global chat bar button.
+function renderChannelToggle(channel: Channel | undefined) {
+    if (!channel || !hasOwnKey(channel)) return null;
+    return (
+        <Menu.MenuCheckboxItem
+            key="vc-encryptdms-toggle-channel"
+            id="vc-encryptdms-toggle-channel"
+            label="Encrypt With Secret Key"
+            checked={isChannelEncrypted(channel)}
+            action={() => toggleChannelEncryption(channel.id)}
+        />
+    );
+}
+
 const userContextPatch: NavContextMenuPatchCallback = (children, { user }: { user?: User; }) => {
     if (!user) return;
 
-    const item = (
+    const dmChannelId = ChannelStore.getDMFromUserId(user.id);
+    const items = [
         <Menu.MenuItem
+            key="vc-encryptdms-set-user-key"
             id="vc-encryptdms-set-user-key"
             label="Set AES Secret Key"
             icon={EncryptDMsIcon}
             action={() => openUserKeyModal(user.id, user.username)}
-        />
-    );
+        />,
+        renderChannelToggle(dmChannelId ? ChannelStore.getChannel(dmChannelId) : undefined),
+    ];
 
-    // In DM sidebar: insert before "Close DM" so the item is in the visible section.
+    // In DM sidebar: insert before "Close DM" so the items are in the visible section.
     const dmGroup = findGroupChildrenByChildId("close-dm", children);
     if (dmGroup) {
         const idx = dmGroup.findIndex(c => c?.props?.id === "close-dm");
-        dmGroup.splice(idx, 0, item);
+        dmGroup.splice(idx, 0, ...items);
         return;
     }
 
     // In server / other contexts: place just above the devmode copy-id item
     // when present; otherwise append.
     const devGroup = findGroupChildrenByChildId(`devmode-copy-id-${user.id}`, children);
-    if (devGroup) devGroup.splice(-1, 0, item);
-    else children.push(item);
+    if (devGroup) devGroup.splice(-1, 0, ...items);
+    else children.push(...items);
+};
+
+// Text/voice channels, threads and group DMs.
+const channelContextPatch: NavContextMenuPatchCallback = (children, { channel }: { channel?: Channel; }) => {
+    if (!channel) return;
+
+    children.push(
+        <Menu.MenuGroup>
+            <Menu.MenuItem
+                id="vc-encryptdms-set-channel-key"
+                label={channelKeys.get(channel.id) ? "Edit AES Secret Key" : "Set AES Secret Key"}
+                icon={EncryptDMsIcon}
+                action={() => openChannelKeyModal(channel.id)}
+            />
+            {renderChannelToggle(channel)}
+        </Menu.MenuGroup>
+    );
 };
 
 let tooltipTimeout: ReturnType<typeof setTimeout> | undefined;
 
 const attachmentWarnSeen = new Set<string>();
-
-function resolveSendAesKey(channel: Channel | undefined | null, aesSecret: string): { key: string; hasUserKey: boolean; recipients: string[]; } {
-    const recipients = channel?.recipients ?? [];
-    if (recipients.length === 1) {
-        const partnerKey = getUserKey(recipients[0]);
-        if (partnerKey) return { key: partnerKey, hasUserKey: true, recipients };
-    }
-    return { key: aesSecret, hasUserKey: false, recipients };
-}
 
 type EncodeOutcome =
     | { kind: "encoded"; content: string; }
@@ -125,50 +143,26 @@ type EncodeOutcome =
 
 async function computeOutgoingEncoding(channelId: string, content: string): Promise<EncodeOutcome> {
     const channel = ChannelStore.getChannel(channelId);
-    const aesSecretSetting = settings.store.aesSecret;
-    const { key: aesKey, hasUserKey, recipients } = resolveSendAesKey(channel, aesSecretSetting);
+    if (!isChannelEncrypted(channel)) return { kind: "skip" };
 
-    const isPrivate = !!channel?.isPrivate?.();
-    const isOneOnOne = isPrivate && recipients.length === 1;
-
-    // Ambiguity: in group DMs or guilds, per-user keys can't apply. If the user
-    // has any per-user key matching ANY recipient (or any per-user key at all
-    // for guild channels) and has expressed encryption intent, refuse — the send
-    // is cancelled rather than silently going out in plaintext.
-    if (settings.store.autoEncodeOutgoing && !aesSecretSetting && !isOneOnOne) {
-        const allKeys = getAllUserKeys();
-        const hasMatchingKey = recipients.some(id => allKeys[id]);
-        if (hasMatchingKey || (!isPrivate && Object.keys(allKeys).length > 0)) {
-            showToast({
-                text: "Message not sent: per-user AES keys don't apply in group DMs or servers. Set a global shared secret in EncryptDMs settings or disable auto-encrypt.",
-                variant: "critical"
-            });
-            return { kind: "refuse" };
-        }
+    // Encryption is on for this channel, so never fall back to sending plaintext.
+    const { key } = resolveSendKey(channel);
+    if (!key) {
+        showToast({
+            text: "Message not sent: auto-encrypt is on but no shared secret is set. Set one in EncryptDMs settings, set a key for this channel, or turn auto-encrypt off.",
+            variant: "critical"
+        });
+        return { kind: "refuse" };
     }
 
-    if (!content) {
-        if (hasUserKey || (settings.store.autoEncodeOutgoing && aesSecretSetting)) {
-            return { kind: "warn-attachment-only" };
-        }
-        return { kind: "skip" };
-    }
-
-    // A per-user key bypasses the autoEncodeOutgoing toggle and always AES-encrypts.
-    if (!hasUserKey && !settings.store.autoEncodeOutgoing) return { kind: "skip" };
-
-    if (!aesKey) {
-        showToast({ text: "Set a shared AES secret in the EncryptDMs settings before sending.", variant: "critical" });
-        return { kind: "skip" };
-    }
+    if (!content) return { kind: "warn-attachment-only" };
 
     setAutoEncodeTooltip(true);
     if (tooltipTimeout) clearTimeout(tooltipTimeout);
     const t = scheduleAutoEncodeTooltipHide(2000);
     if (t) tooltipTimeout = t;
 
-    const encoded = await encrypt(content, aesKey);
-    return { kind: "encoded", content: encoded };
+    return { kind: "encoded", content: await encrypt(content, key) };
 }
 
 // Voice-message/clip uploads carry metadata Discord needs in cleartext (waveform,
@@ -233,7 +227,7 @@ async function handleBeforeEdit(channelId: string, message: MessageObject) {
 
 export default definePlugin({
     name: "EncryptDMs",
-    description: "End-to-end encrypt DMs with AES-256-GCM — text and attachments, shared-secret or per-user keys, directly in chat.",
+    description: "End-to-end encrypt DMs, group DMs and channels with AES-256-GCM — text and attachments, with shared, per-user or per-channel keys and per-channel toggles.",
     tags: ["Chat", "Utility", "Privacy"],
     // TODO: replace with your contributor entry from @utils/constants Devs before upstreaming
     authors: [{ name: "YourName", id: 0n }],
@@ -243,6 +237,9 @@ export default definePlugin({
     contextMenus: {
         "message": messageCtxPatch,
         "user-context": userContextPatch,
+        "channel-context": channelContextPatch,
+        "thread-context": channelContextPatch,
+        "gdm-context": channelContextPatch,
     },
 
     renderMessageAccessory: props => <EncryptDMsAccessory message={props.message} />,

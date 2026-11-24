@@ -30,7 +30,7 @@ export const settings = definePluginSettings({
     },
     autoEncodeOutgoing: {
         type: OptionType.BOOLEAN,
-        description: "Automatically encrypt your messages before sending. Shift+click or right-click the chat bar button to toggle",
+        description: "Encrypt your messages with the shared secret in channels without their own key. Shift+click or right-click the chat bar button to toggle. Channels and DMs with their own key are toggled from their right-click menu",
         default: false,
     },
     encryptAttachments: {
@@ -57,5 +57,5 @@ export const settings = definePluginSettings({
             </Button>
         ),
     },
-    // userKeys is stored in DataStore (./userKeys.ts) — settings sync uploads to a cloud backend.
+    // Per-user/per-channel keys and toggles are stored in DataStore (./keys.ts) — settings sync uploads to a cloud backend.
 });
